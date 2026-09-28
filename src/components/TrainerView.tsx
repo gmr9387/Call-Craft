@@ -373,9 +373,12 @@ function ScenariosPanel({
 export default function TrainerView({ onOpen, initialSection, onBuild, onTry }: ClassPanelProps) {
   return (
     <div className="history">
-      <div className="page-head">
-        <h1>Trainer</h1>
-        <p className="muted">See how your class is doing and make practice calls for them.</p>
+      <div className="page-head with-photo">
+        <div>
+          <h1>Trainer</h1>
+          <p className="muted">See how your class is doing and make practice calls for them.</p>
+        </div>
+        <img className="head-photo" src="/photos/agents-team.webp" alt="" width={800} height={1199} />
       </div>
       <ClassPanel onOpen={onOpen} initialSection={initialSection} onBuild={onBuild} onTry={onTry} />
     </div>
