@@ -12,7 +12,29 @@ import {
 import { Scorecard, type ScorecardResult } from "../shared/scorecard.js";
 import { ScenarioDraft, type ScenarioInputValue } from "../shared/scenarioInput.js";
 
-const MODEL = env("CALLCRAFT_MODEL") ?? "claude-opus-5";
+// Claude Haiku 4.5 is the lowest-cost current model. Override per deployment with
+// CALLCRAFT_MODEL (the prospect's replies) and CALLCRAFT_SCORING_MODEL (scoring and
+// scenario drafts), for example "claude-opus-5" for higher quality at higher cost.
+const REPLY_MODEL = env("CALLCRAFT_MODEL") ?? "claude-haiku-4-5";
+const SCORING_MODEL = env("CALLCRAFT_SCORING_MODEL") ?? REPLY_MODEL;
+
+type Effort = "low" | "medium" | "high";
+
+// Haiku 4.5 (and older models) reject the effort setting, so only send it where it's supported.
+function effortFor(model: string, effort: Effort): { effort?: Effort } {
+  return /haiku|sonnet-4-5|opus-4-[015]/.test(model) ? {} : { effort };
+}
+
+// Request settings for a plain text reply: nothing at all when the model takes no effort setting.
+function replyConfig(model: string, effort: Effort): { output_config?: { effort?: Effort } } {
+  const config = effortFor(model, effort);
+  return config.effort ? { output_config: config } : {};
+}
+
+// The server-side refusal fallback is only used with the models it's documented for.
+function fallbackEligible(model: string): boolean {
+  return /^claude-(opus-5|fable-5-1)/.test(model);
+}
 
 // Server-side refusal fallback: a declined request is re-run on Anthropic's
 // recommended fallback model inside the same call. It's a beta feature, so if an
@@ -24,8 +46,8 @@ const FALLBACK: { betas: Anthropic.Beta.AnthropicBeta[]; fallbacks: "default" } 
 type FallbackOptions = Partial<typeof FALLBACK>;
 let fallbackSupported = true;
 
-async function withFallback<T>(run: (options: FallbackOptions) => Promise<T>): Promise<T> {
-  if (!fallbackSupported) return run({});
+async function withFallback<T>(model: string, run: (options: FallbackOptions) => Promise<T>): Promise<T> {
+  if (!fallbackSupported || !fallbackEligible(model)) return run({});
   try {
     return await run(FALLBACK);
   } catch (error) {
@@ -87,13 +109,13 @@ export async function prospectReply(scenario: Scenario, transcript: Turn[]): Pro
     throw new CoachError("The agent must speak before the prospect replies.");
   }
 
-  const response = await withFallback((fallback) =>
+  const response = await withFallback(REPLY_MODEL, (fallback) =>
     getClient().beta.messages.create({
       ...fallback,
-      model: MODEL,
+      model: REPLY_MODEL,
       max_tokens: 4000,
       // Fast, conversational replies matter more than deep reasoning here.
-      output_config: { effort: "low" },
+      ...replyConfig(REPLY_MODEL, "low"),
       system: prospectSystem(scenario),
       messages: toMessages(transcript),
     }),
@@ -154,12 +176,12 @@ export async function scoreCall(scenario: Scenario, transcript: Turn[]): Promise
     throw new CoachError("There's nothing to score yet. Say something on the call first.");
   }
 
-  const response = await withFallback((fallback) =>
+  const response = await withFallback(SCORING_MODEL, (fallback) =>
     getClient().beta.messages.parse({
       ...fallback,
-      model: MODEL,
+      model: SCORING_MODEL,
       max_tokens: 16000,
-      output_config: { effort: "high", format: betaZodOutputFormat(Scorecard) },
+      output_config: { ...effortFor(SCORING_MODEL, "high"), format: betaZodOutputFormat(Scorecard) },
       messages: [{ role: "user", content: scoringPrompt(scenario, transcript) }],
     }),
   );
@@ -217,12 +239,12 @@ function clip(text: string, max: number): string {
 
 // Drafts a scenario from a trainer's one-line description. The trainer reviews and edits it before saving.
 export async function draftScenario(description: string): Promise<ScenarioInputValue> {
-  const response = await withFallback((fallback) =>
+  const response = await withFallback(SCORING_MODEL, (fallback) =>
     getClient().beta.messages.parse({
       ...fallback,
-      model: MODEL,
+      model: SCORING_MODEL,
       max_tokens: 16000,
-      output_config: { effort: "medium", format: betaZodOutputFormat(ScenarioDraft) },
+      output_config: { ...effortFor(SCORING_MODEL, "medium"), format: betaZodOutputFormat(ScenarioDraft) },
       messages: [{ role: "user", content: draftPrompt(description) }],
     }),
   );
@@ -247,15 +269,20 @@ export async function draftScenario(description: string): Promise<ScenarioInputV
 }
 
 // Smallest possible request, for the health check page.
-export async function pingAI(): Promise<{ model: string; fallback: boolean }> {
-  const response = await withFallback((fallback) =>
+export async function pingAI(): Promise<{ model: string; scoringModel: string; fallback: boolean }> {
+  const response = await withFallback(REPLY_MODEL, (fallback) =>
     getClient().beta.messages.create({
       ...fallback,
-      model: MODEL,
+      model: REPLY_MODEL,
       max_tokens: 256,
-      output_config: { effort: "low" },
+      ...replyConfig(REPLY_MODEL, "low"),
       messages: [{ role: "user", content: "Reply with the word OK." }],
     }),
   );
-  return { model: response.model, fallback: fallbackSupported };
+  return {
+    model: response.model,
+    scoringModel: SCORING_MODEL,
+    // Only worth reporting when the model would use the fallback.
+    fallback: !fallbackEligible(REPLY_MODEL) || fallbackSupported,
+  };
 }

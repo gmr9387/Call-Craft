@@ -22,31 +22,6 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #0f1216;
-    --surface: #171b21;
-    --surface-2: #1f242c;
-    --border: #2c333d;
-    --text: #eef1f4;
-    --text-2: #c2c8d0;
-    --muted: #97a0ab;
-    --accent: #7f9ff0;
-    --accent-ink: #0f1216;
-    --accent-soft: #1f2a44;
-    --good: #6cc38f;
-    --good-soft: #16291e;
-    --warn: #e0a84e;
-    --warn-soft: #2e2413;
-    --bad: #f08a80;
-    --bad-soft: #341a18;
-    --agent-bubble: #1f2a44;
-    --prospect-bubble: #232932;
-    --shadow: none;
-    color-scheme: dark;
-  }
-}
-
 * {
   box-sizing: border-box;
 }
@@ -1098,7 +1073,7 @@ nav .link.active {
   margin: 0;
 }
 
-/* Marketing page (always light; see App.tsx) */
+/* Marketing page */
 .marketing {
   max-width: 1160px;
   margin: 0 auto;
@@ -1605,23 +1580,6 @@ nav .link.active {
   --tone-4-fg: #9c2a4f;
   --tone-5-bg: #e0f1f3;
   --tone-5-fg: #17656e;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --tone-0-bg: #1f2e4d;
-    --tone-0-fg: #a9c4f5;
-    --tone-1-bg: #1b3326;
-    --tone-1-fg: #9fd9b7;
-    --tone-2-bg: #3a2618;
-    --tone-2-fg: #f2b98f;
-    --tone-3-bg: #2d2342;
-    --tone-3-fg: #c9b1f0;
-    --tone-4-bg: #3b1f2a;
-    --tone-4-fg: #f1a7c0;
-    --tone-5-bg: #173236;
-    --tone-5-fg: #93d3da;
-  }
 }
 
 .avatar {

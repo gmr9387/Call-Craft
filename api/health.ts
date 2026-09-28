@@ -14,8 +14,11 @@ async function checkAI(): Promise<Check> {
     return { ok: false, detail: "ANTHROPIC_API_KEY isn't set for this deployment. Add it in Vercel, then redeploy." };
   }
   try {
-    const { model, fallback } = await pingAI();
-    return { ok: true, detail: `Working (model ${model}${fallback ? "" : ", refusal fallback not available"}).` };
+    const { model, scoringModel, fallback } = await pingAI();
+    return {
+      ok: true,
+      detail: `Working (replies: ${model}, scoring: ${scoringModel}${fallback ? "" : ", refusal fallback not available"}).`,
+    };
   } catch (error) {
     if (error instanceof Anthropic.APIError) {
       return { ok: false, detail: `Anthropic returned ${error.status ?? "an error"}: ${anthropicReason(error)}` };
