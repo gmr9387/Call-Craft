@@ -5,14 +5,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CallCraft</title>
-    <script>
-      // Keep the marketing page light from the first paint (no dark flash before the app loads).
-      try {
-        if (localStorage.getItem('callcraft.signedIn') !== '1') document.documentElement.dataset.theme = 'light'
-      } catch {
-        document.documentElement.dataset.theme = 'light'
-      }
-    </script>
+    <meta name="color-scheme" content="light" />
   </head>
   <body>
     <div id="root"></div>

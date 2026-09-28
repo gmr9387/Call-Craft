@@ -33,6 +33,7 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
 - **Marketing page and sign-in**: the site opens on a simple marketing page. **Sign in** currently lets anyone in with one click (development only; there are no accounts or passwords yet).
 - **Dashboard**: after signing in, a left menu (Dashboard, Practice, My calls, Trainer). The dashboard shows the next call to practice, your name and class, three numbers (calls, average score, calls passed), and your recent calls.
 - **Desktop only**: the app itself needs a window at least 900px wide, like an agent's real workstation. On phones it asks the person to use a computer. The marketing page works on any screen.
+- **Light theme everywhere**, regardless of the computer's dark mode setting.
 
 ## How it works
 
@@ -51,7 +52,13 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
 | `db/schema.sql` | Database schema (safe to re-run) |
 | `src/` | React UI |
 
-The API key and database connection only live on the server; the browser never talks to the database. The default model is `claude-opus-5`, and the server-side refusal fallback is enabled.
+The API key and database connection only live on the server; the browser never talks to the database.
+
+**Models and cost.** By default everything uses `claude-haiku-4-5`, the lowest-cost current Claude model. Override per deployment:
+- `CALLCRAFT_MODEL`: the prospect's replies
+- `CALLCRAFT_SCORING_MODEL`: scoring and scenario drafts (defaults to `CALLCRAFT_MODEL`)
+
+For example, set `CALLCRAFT_SCORING_MODEL=claude-opus-5` for more careful scoring at a higher cost. The effort setting is only sent to models that support it. The server-side refusal fallback is only used with Claude Opus 5 and Claude Fable 5.1.
 
 ## Database
 
