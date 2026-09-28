@@ -1,5 +1,4 @@
-import { getScenario } from '../../shared/scenarios.ts'
-import type { Attempt } from '../history.ts'
+import { attemptTitle, type Attempt } from '../history.ts'
 import type { SaveNote } from './CallScreen.tsx'
 
 interface Props {
@@ -25,7 +24,6 @@ function clamp(n: number, min: number, max: number) {
 
 export default function ScorecardView({ attempt, saveNote, backLabel, onRetry, onBack }: Props) {
   const { scorecard: sc } = attempt
-  const scenario = getScenario(attempt.scenarioId)
   const score = clamp(sc.overall_score, 0, 100)
 
   return (
@@ -42,7 +40,7 @@ export default function ScorecardView({ attempt, saveNote, backLabel, onRetry, o
         </div>
         <div className="score-summary">
           <span className={`status status-${sc.result}`}>{RESULT_LABEL[sc.result]}</span>
-          <h2>{scenario?.title ?? 'Practice call'}</h2>
+          <h2>{attemptTitle(attempt)}</h2>
           <p className="muted">{sc.outcome}</p>
           <p className="muted small">
             {attempt.agentName} · {new Date(attempt.startedAt).toLocaleString()} ·{' '}

@@ -1,10 +1,12 @@
-import { CALL_FLOW, SCENARIOS, getScenario } from '../../shared/scenarios.ts'
-import type { Attempt } from '../history.ts'
+import { CALL_FLOW, SCENARIOS, type Scenario } from '../../shared/scenarios.ts'
+import { attemptTitle, type Attempt } from '../history.ts'
 
 interface Props {
   attempts: Attempt[]
   onOpen: (attempt: Attempt) => void
   showAgents?: boolean
+  // Trainer-built scenarios to list alongside the built-in ones.
+  customScenarios?: Scenario[]
 }
 
 const RESULT_LABEL = { pass: '✓ Pass', needs_work: '! Needs work', fail: '✕ Fail' } as const
@@ -30,7 +32,7 @@ function mostMissedStep(attempts: Attempt[]): string | null {
   return `${label} (${top[1]}×)`
 }
 
-export default function AttemptTables({ attempts, onOpen, showAgents = false }: Props) {
+export default function AttemptTables({ attempts, onOpen, showAgents = false, customScenarios = [] }: Props) {
   const agents = [...new Set(attempts.map((a) => a.agentName))].sort()
 
   const byAgent = agents.map((name) => {
@@ -46,10 +48,16 @@ export default function AttemptTables({ attempts, onOpen, showAgents = false }: 
     }
   })
 
-  const byScenario = SCENARIOS.map((s) => {
-    const runs = attempts.filter((a) => a.scenarioId === s.id)
+  // Built-in and trainer-built scenarios, plus any other scenario ids that appear in the calls.
+  const scenarioRows = new Map<string, string>()
+  for (const s of [...SCENARIOS, ...customScenarios]) scenarioRows.set(s.id, s.title)
+  for (const a of attempts) if (!scenarioRows.has(a.scenarioId)) scenarioRows.set(a.scenarioId, attemptTitle(a))
+
+  const byScenario = [...scenarioRows].map(([id, title]) => {
+    const runs = attempts.filter((a) => a.scenarioId === id)
     return {
-      scenario: s,
+      id,
+      title,
       runs: runs.length,
       avg: average(runs.map((a) => a.scorecard.overall_score)),
       passes: runs.filter((a) => a.scorecard.result === 'pass').length,
@@ -105,8 +113,8 @@ export default function AttemptTables({ attempts, onOpen, showAgents = false }: 
           </thead>
           <tbody>
             {byScenario.map((row) => (
-              <tr key={row.scenario.id}>
-                <td>{row.scenario.title}</td>
+              <tr key={row.id}>
+                <td>{row.title}</td>
                 <td className="num">{row.runs}</td>
                 <td className="num">{row.avg ?? '–'}</td>
                 <td className="num">{row.runs ? `${row.passes} / ${row.runs}` : '–'}</td>
@@ -136,7 +144,7 @@ export default function AttemptTables({ attempts, onOpen, showAgents = false }: 
               <tr key={a.id}>
                 <td>{new Date(a.startedAt).toLocaleString()}</td>
                 <td>{a.agentName}</td>
-                <td>{getScenario(a.scenarioId)?.title ?? a.scenarioId}</td>
+                <td>{attemptTitle(a)}</td>
                 <td className="num">{Math.round(a.scorecard.overall_score)}</td>
                 <td>
                   <span className={`status status-${a.scorecard.result}`}>{RESULT_LABEL[a.scorecard.result]}</span>

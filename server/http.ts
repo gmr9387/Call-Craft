@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { CoachError } from "./coach.js";
-import { DbNotConfiguredError } from "./db.js";
+import { DbNotConfiguredError, ScenarioLimitError } from "./db.js";
 
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -22,6 +22,9 @@ export async function readJson(request: Request): Promise<Record<string, unknown
 export function errorResponse(error: unknown): Response {
   if (error instanceof CoachError) {
     return json({ error: error.message }, 422);
+  }
+  if (error instanceof ScenarioLimitError) {
+    return json({ error: error.message }, 409);
   }
   if (error instanceof DbNotConfiguredError) {
     return json({ error: error.message }, 503);

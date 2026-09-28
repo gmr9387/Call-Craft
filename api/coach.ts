@@ -1,7 +1,7 @@
 import { prospectReply, scoreCall } from "../server/coach.js";
-import { DbNotConfiguredError, saveAttempt } from "../server/db.js";
+import { DbNotConfiguredError, saveAttempt, scenarioForClass } from "../server/db.js";
 import { cleanText, errorResponse, json, readJson } from "../server/http.js";
-import { getScenario, type Turn } from "../shared/scenarios.js";
+import { getScenario, isCustomScenarioId, type Scenario, type Turn } from "../shared/scenarios.js";
 
 const MAX_TURNS = 80;
 const MAX_TURN_CHARS = 2000;
@@ -24,19 +24,29 @@ function parseTranscript(value: unknown): Turn[] | null {
   return turns;
 }
 
+// Built-in scenarios resolve by slug. Trainer-built scenarios need the class code of their class.
+async function resolveScenario(scenarioId: unknown, classCode: string | null): Promise<Scenario | null> {
+  if (typeof scenarioId !== "string") return null;
+  if (!isCustomScenarioId(scenarioId)) return getScenario(scenarioId) ?? null;
+  return classCode ? scenarioForClass(scenarioId, classCode) : null;
+}
+
 // Simulator endpoint: the AI prospect's next line, or the call scorecard.
 // When a class code is sent with "score", the server saves the scored call to that class,
-// so the score a trainer sees is the one the server produced.
+// so the score a trainer sees is the one the server produced. Trainer preview calls send
+// saveToClass: false so they don't show up as agent calls.
 export async function POST(request: Request): Promise<Response> {
   const body = await readJson(request);
   if (!body) return json({ error: "Invalid JSON body." }, 400);
 
-  const scenario = typeof body.scenarioId === "string" ? getScenario(body.scenarioId) : undefined;
-  if (!scenario) return json({ error: "Unknown scenario." }, 400);
   const transcript = parseTranscript(body.transcript);
   if (!transcript) return json({ error: "Invalid transcript." }, 400);
 
   try {
+    const classCodeForScenario = cleanText(body.classCode, 20);
+    const scenario = await resolveScenario(body.scenarioId, classCodeForScenario);
+    if (!scenario) return json({ error: "Unknown scenario." }, 400);
+
     if (body.action === "reply") {
       return json({ text: await prospectReply(scenario, transcript) });
     }
@@ -45,7 +55,7 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const scorecard = await scoreCall(scenario, transcript);
-    if (body.classCode === undefined || body.classCode === null || body.classCode === "") {
+    if (!body.classCode || body.saveToClass === false) {
       return json({ scorecard, saved: false });
     }
 
@@ -74,6 +84,7 @@ export async function POST(request: Request): Promise<Response> {
         classCode,
         agentName,
         scenarioId: scenario.id,
+        scenarioTitle: scenario.title,
         startedAt: startedAt.toISOString(),
         durationSec,
         transcript,

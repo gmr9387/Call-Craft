@@ -1,9 +1,9 @@
-import { classDashboard, createClass, findClass } from "../server/db.js";
+import { classDashboard, createClass, joinClass } from "../server/db.js";
 import { cleanText, errorResponse, json, readJson } from "../server/http.js";
 
 // Class endpoint:
 // - "create": a trainer creates a class and gets its class code plus a private trainer key.
-// - "join": an agent checks a class code before practicing.
+// - "join": an agent checks a class code and gets the class's trainer-built scenarios.
 // - "dashboard": a trainer loads every scored call in their class with the trainer key.
 export async function POST(request: Request): Promise<Response> {
   const body = await readJson(request);
@@ -19,9 +19,9 @@ export async function POST(request: Request): Promise<Response> {
       }
       case "join": {
         const code = cleanText(body.classCode, 20);
-        const classInfo = code ? await findClass(code) : null;
-        if (!classInfo) return json({ error: "That class code wasn't found. Check it with your trainer." }, 404);
-        return json({ classInfo });
+        const joined = code ? await joinClass(code) : null;
+        if (!joined) return json({ error: "That class code wasn't found. Check it with your trainer." }, 404);
+        return json(joined);
       }
       case "dashboard": {
         const key = cleanText(body.trainerKey, 100);

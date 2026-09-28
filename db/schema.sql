@@ -31,3 +31,28 @@ create index if not exists attempts_class_created_idx on attempts (class_id, cre
 -- for the anon/authenticated roles. The server connects as the table owner.
 alter table classes enable row level security;
 alter table attempts enable row level security;
+
+-- Scenario title captured with each call, so dashboards can label calls
+-- from trainer-built scenarios even after the scenario changes.
+alter table attempts add column if not exists scenario_title text;
+
+-- Trainer-built practice scenarios, scoped to one class.
+create table if not exists scenarios (
+  id uuid primary key default gen_random_uuid(),
+  class_id uuid not null references classes (id) on delete cascade,
+  title text not null check (char_length(title) between 1 and 80),
+  difficulty text not null check (difficulty in ('Easy', 'Medium', 'Hard')),
+  focus text not null check (char_length(focus) between 1 and 400),
+  lead_name text not null check (char_length(lead_name) between 1 and 80),
+  program text not null check (char_length(program) between 1 and 120),
+  persona text not null check (char_length(persona) between 20 and 3000),
+  success_criteria jsonb not null default '[]'::jsonb,
+  not_applicable jsonb not null default '[]'::jsonb,
+  archived boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists scenarios_class_idx on scenarios (class_id, created_at);
+
+alter table scenarios enable row level security;
