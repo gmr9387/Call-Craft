@@ -1,10 +1,13 @@
 import { getScenario } from '../../shared/scenarios.ts'
 import type { Attempt } from '../history.ts'
+import type { SaveNote } from './CallScreen.tsx'
 
 interface Props {
   attempt: Attempt
-  onRetry: () => void
-  onHome: () => void
+  saveNote?: SaveNote
+  backLabel: string
+  onRetry?: () => void
+  onBack: () => void
 }
 
 const RESULT_LABEL = { pass: '✓ Pass', needs_work: '! Needs work', fail: '✕ Fail' } as const
@@ -20,13 +23,18 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.round(n)))
 }
 
-export default function ScorecardView({ attempt, onRetry, onHome }: Props) {
+export default function ScorecardView({ attempt, saveNote, backLabel, onRetry, onBack }: Props) {
   const { scorecard: sc } = attempt
   const scenario = getScenario(attempt.scenarioId)
   const score = clamp(sc.overall_score, 0, 100)
 
   return (
     <div className="scorecard">
+      {saveNote && (
+        <p className={saveNote.ok ? 'notice' : 'error'} role={saveNote.ok ? 'status' : 'alert'}>
+          {saveNote.text}
+        </p>
+      )}
       <section className="card score-hero">
         <div className="score-number">
           <span className="value">{score}</span>
@@ -42,11 +50,13 @@ export default function ScorecardView({ attempt, onRetry, onHome }: Props) {
           </p>
         </div>
         <div className="score-actions">
-          <button className="primary" onClick={onRetry}>
-            Try again
-          </button>
-          <button className="secondary" onClick={onHome}>
-            Other scenarios
+          {onRetry && (
+            <button className="primary" onClick={onRetry}>
+              Try again
+            </button>
+          )}
+          <button className="secondary" onClick={onBack}>
+            {backLabel}
           </button>
         </div>
       </section>

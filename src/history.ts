@@ -1,57 +1,71 @@
-import type { Scorecard } from './api.ts'
-import type { Turn } from '../shared/scenarios.ts'
+import type { ClassInfo, SavedAttempt } from '../shared/classes.ts'
 
-export interface Attempt {
-  id: string
-  agentName: string
-  scenarioId: string
-  startedAt: string
-  durationSec: number
-  transcript: Turn[]
-  scorecard: Scorecard
-}
+export type Attempt = SavedAttempt
 
 const KEY = 'callcraft.attempts.v1'
 const NAME_KEY = 'callcraft.agentName'
+const CLASS_KEY = 'callcraft.class'
+const TRAINER_KEY = 'callcraft.trainerKey'
 
 // Storage can be unavailable (private mode, blocked site data); the app still works without it.
-export function loadAttempts(): Attempt[] {
+function read(key: string): string | null {
   try {
-    const raw = localStorage.getItem(KEY)
-    return raw ? (JSON.parse(raw) as Attempt[]) : []
+    return localStorage.getItem(key)
   } catch {
-    return []
+    return null
   }
+}
+
+function write(key: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = read(key)
+    return raw ? (JSON.parse(raw) as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+export function loadAttempts(): Attempt[] {
+  return readJson<Attempt[]>(KEY, [])
 }
 
 export function saveAttempt(attempt: Attempt): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify([attempt, ...loadAttempts()].slice(0, 200)))
-  } catch {
-    // Ignore storage failures.
-  }
+  write(KEY, JSON.stringify([attempt, ...loadAttempts()].slice(0, 200)))
 }
 
 export function clearAttempts(): void {
-  try {
-    localStorage.removeItem(KEY)
-  } catch {
-    // Ignore storage failures.
-  }
+  write(KEY, null)
 }
 
 export function loadAgentName(): string {
-  try {
-    return localStorage.getItem(NAME_KEY) ?? ''
-  } catch {
-    return ''
-  }
+  return read(NAME_KEY) ?? ''
 }
 
 export function saveAgentName(name: string): void {
-  try {
-    localStorage.setItem(NAME_KEY, name)
-  } catch {
-    // Ignore storage failures.
-  }
+  write(NAME_KEY, name)
+}
+
+export function loadJoinedClass(): ClassInfo | null {
+  return readJson<ClassInfo | null>(CLASS_KEY, null)
+}
+
+export function saveJoinedClass(info: ClassInfo | null): void {
+  write(CLASS_KEY, info ? JSON.stringify(info) : null)
+}
+
+export function loadTrainerKey(): string {
+  return read(TRAINER_KEY) ?? ''
+}
+
+export function saveTrainerKey(key: string | null): void {
+  write(TRAINER_KEY, key)
 }
