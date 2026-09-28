@@ -123,7 +123,12 @@ Row-level security is on with no policies, so Supabase's public REST API can't r
 - **Passwords** are stored as scrypt hashes. **Sessions** are a random token in an httpOnly, SameSite=Lax cookie (Secure on https), valid 30 days; only a hash of the token is stored.
 - **Links** for invites and password resets work once and expire after 7 days. Making a new reset link cancels the old one. Using a reset link signs the person out everywhere else.
 - **Turning an account off** signs it out everywhere and blocks sign-in until an admin turns it back on.
-- **Wrong passwords** and wrong class codes are limited per computer (`CALLCRAFT_HOURLY_SIGNIN_FAILURES`, default 20 an hour).
+- **Wrong passwords** and wrong class codes are limited per computer, and wrong passwords also per account, so guessing from many computers doesn't work (`CALLCRAFT_HOURLY_SIGNIN_FAILURES`, default 20 an hour). Changing your password signs out your other browsers.
+- **Practice calls can't be faked.** Every AI reply comes back signed over the conversation so far, and the server checks the signature before replying again or scoring, so nobody can type the caller's lines themselves to fake a pass. The signing secret is created once and kept in the database (or set `CALLCRAFT_SIGNING_SECRET`).
+- **The scorer can't be talked into a score.** The transcript is fenced off in the scoring prompt, and anything said on the call that tries to instruct the scorer is ignored and counted against the speaker.
+- **Security headers** on every page (in `vercel.json`): a strict Content Security Policy (only this site's own scripts, styles, and API), no embedding in other sites, no content-type sniffing, HTTPS only (HSTS), and a referrer and permissions policy (microphone for this site only).
+- **Backups and data requests:** admins download everything CallCraft keeps (never passwords, sessions, or links) from System. Trainers download every call in a class, not just the ones on screen.
+- **Roles:** admins change anyone's role except their own; the change takes effect on the next request.
 - The API only accepts JSON requests, so other websites can't submit forms as a signed-in person.
 - Agents only see their own calls. Trainers only see classes they run. Admins see everything.
 

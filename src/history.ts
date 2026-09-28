@@ -16,3 +16,13 @@ export function scoreOf(attempt: Attempt): number {
 export function resultOf(attempt: Attempt): Attempt['scorecard']['result'] {
   return attempt.review?.result ?? attempt.scorecard.result
 }
+
+// Who made a call: the account when known (so two people with the same name stay apart), else the name.
+export const personKey = (attempt: Attempt): string => attempt.userId ?? `name:${attempt.agentName}`
+
+// Each person in a list of calls, with the name from their most recent call, sorted by name.
+export function peopleIn(attempts: Attempt[]): { key: string; name: string }[] {
+  const people = new Map<string, string>()
+  for (const a of attempts) if (!people.has(personKey(a))) people.set(personKey(a), a.agentName)
+  return [...people].map(([key, name]) => ({ key, name })).sort((x, y) => x.name.localeCompare(y.name))
+}

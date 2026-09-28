@@ -70,12 +70,12 @@ export async function POST(request: Request): Promise<Response> {
   try {
     switch (body.action) {
       case "login": {
-        await checkSigninAllowed(request);
         const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+        await checkSigninAllowed(request, email || undefined);
         const password = typeof body.password === "string" ? body.password : "";
         const user = email && password ? await checkLogin(email, password) : null;
         if (!user) {
-          await recordSigninFailure(request);
+          await recordSigninFailure(request, email || undefined);
           return json({ error: "That email and password don't match. Check them and try again." }, 401);
         }
         return signedIn(request, user);

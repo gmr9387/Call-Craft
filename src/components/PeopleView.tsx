@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ROLE_LABEL, type Me, type Person, type Role } from '../../shared/accounts.ts'
-import { deletePerson, inviteLink, listPeople, resetLink, setDisabled } from '../api.ts'
+import { deletePerson, inviteLink, listPeople, resetLink, setDisabled, setRole } from '../api.ts'
 import { LinkNotice } from './CopyLink.tsx'
 import EditPerson from './EditPerson.tsx'
 
@@ -66,6 +66,20 @@ export default function PeopleView({ user }: { user: Me }) {
         link: await resetLink(p.id),
       })
     })
+
+  const changeRole = (p: Person, role: Role) => {
+    const note =
+      role === 'admin'
+        ? 'Admins can see and change everything.'
+        : p.role === 'trainer'
+          ? "Their classes stay, but they won't be able to open them. Hand them to another trainer in each class's Settings."
+          : ''
+    if (!confirm(`Make ${p.name} ${role === 'admin' ? 'an' : 'a'} ${ROLE_LABEL[role].toLowerCase()}? ${note}`)) return
+    void run(p.id, async () => {
+      await setRole(p.id, role)
+      await load()
+    })
+  }
 
   const toggle = (p: Person) => {
     if (!p.disabled && !confirm(`Turn off ${p.name}'s account? They are signed out and can't sign in until you turn it back on.`)) {
@@ -215,7 +229,25 @@ export default function PeopleView({ user }: { user: Me }) {
                       {p.disabled && <span className="status status-fail off-tag">Off</span>}
                     </td>
                     <td>{p.email}</td>
-                    <td>{ROLE_LABEL[p.role]}</td>
+                    <td>
+                      {p.id === user.id ? (
+                        ROLE_LABEL[p.role]
+                      ) : (
+                        <select
+                          className="small-select"
+                          value={p.role}
+                          disabled={busy === p.id}
+                          aria-label={`Role for ${p.name}`}
+                          onChange={(e) => changeRole(p, e.target.value as Role)}
+                        >
+                          {(['agent', 'trainer', 'admin'] as const).map((r) => (
+                            <option key={r} value={r}>
+                              {ROLE_LABEL[r]}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
                     <td>{p.className ?? '–'}</td>
                     <td>{when(p.lastSeenAt)}</td>
                     <td>

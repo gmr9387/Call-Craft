@@ -50,6 +50,7 @@ const MESSAGES = {
   drafts: "This class has used today's scenario drafts. You can still write scenarios by hand.",
   health: "Too many health checks from this computer. Try again later.",
   signin: "Too many tries from this computer. Wait a while and try again, or ask your trainer for help.",
+  account: "Too many wrong passwords for this account. Wait an hour, or ask your trainer for a reset link.",
 } as const;
 
 // A salted hash of the signed-in person's id, or of the caller's IP address when there is no
@@ -190,13 +191,25 @@ export async function checkUsage(
 }
 
 // Sign-in guard: throws when this IP address has failed too many times in the last hour.
-export async function checkSigninAllowed(request: Request): Promise<void> {
-  const { counts } = await safeCounts(clientId(request), null);
-  if (counts.clientSignin >= limits.signinFailuresHourly()) throw new UsageLimitError(MESSAGES.signin);
+// A salted hash standing for one email address, so failed sign-ins to one account can be
+// counted across every computer they come from.
+function accountId(email: string): string {
+  const salt = env("CALLCRAFT_USAGE_SALT") ?? "callcraft";
+  return createHash("sha256").update(`${salt}:email:${email.trim().toLowerCase()}`).digest("hex").slice(0, 32);
 }
 
-export async function recordSigninFailure(request: Request): Promise<void> {
+// Throws when this computer, or (for password sign-in) this account, failed too often in the last hour.
+export async function checkSigninAllowed(request: Request, email?: string): Promise<void> {
+  const max = limits.signinFailuresHourly();
+  if ((await safeCounts(clientId(request), null)).counts.clientSignin >= max) throw new UsageLimitError(MESSAGES.signin);
+  if (email && (await safeCounts(accountId(email), null)).counts.clientSignin >= max) {
+    throw new UsageLimitError(MESSAGES.account);
+  }
+}
+
+export async function recordSigninFailure(request: Request, email?: string): Promise<void> {
   await safeRecord("signin", clientId(request), null, false);
+  if (email) await safeRecord("signin", accountId(email), null, false);
 }
 
 export interface UsageSummary {

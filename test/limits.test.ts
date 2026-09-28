@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { POST as auth } from '../api/auth.ts'
 import { POST as coach } from '../api/coach.ts'
 import { GET as health } from '../api/health.ts'
-import { agentTurn, Browser, fake, get, hasDb, newIp, withEnv } from './helpers.ts'
+import { agentTurn, Browser, fake, get, hasDb, newIp, PASSWORD, withEnv } from './helpers.ts'
 import { agent, newClass, trainer } from './people.ts'
 
 const reply = { action: 'reply', scenarioId: 'cooperative', transcript: agentTurn() }
@@ -36,6 +36,18 @@ describe.skipIf(!hasDb)('spending limits (database)', () => {
       expect(res.status).toBe(429)
       expect(res.body.error).toMatch(/today's practice limit/)
       expect(fake().requests).toHaveLength(0)
+    })
+  })
+
+  it('locks one account after repeated wrong passwords, even from many computers', async () => {
+    const sam = await agent(classCode, 'Sam Target')
+    await withEnv({ CALLCRAFT_HOURLY_SIGNIN_FAILURES: '2' }, async () => {
+      const wrong = { action: 'login', email: sam.email, password: 'wrong password' }
+      expect((await new Browser().post(auth, wrong)).status).toBe(401)
+      expect((await new Browser().post(auth, wrong)).status).toBe(401)
+      const blocked = await new Browser().post(auth, { ...wrong, password: PASSWORD })
+      expect(blocked.status).toBe(429)
+      expect(blocked.body.error).toMatch(/wrong passwords for this account/)
     })
   })
 

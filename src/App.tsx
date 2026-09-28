@@ -3,7 +3,7 @@ import type { Me } from '../shared/accounts.ts'
 import type { ClassInfo, JoinResult, Requirements } from '../shared/classes.ts'
 import { getScenario, type Scenario } from '../shared/scenarios.ts'
 import { BUILTIN_FLOW, type CallFlow } from '../shared/flows.ts'
-import { authStatus, logout, myClass, SIGNED_OUT_EVENT } from './api.ts'
+import { authStatus, getCall, logout, myClass, SIGNED_OUT_EVENT } from './api.ts'
 import type { Attempt } from './history.ts'
 import Home from './components/Home.tsx'
 import CallScreen, { type SaveNote } from './components/CallScreen.tsx'
@@ -507,7 +507,15 @@ export default function App() {
             classId={view.classId}
             section={view.section}
             onSelect={(classId, next) => toTrainer(classId, next ?? 'results')}
-            onOpen={(attempt) => setView({ name: 'score', attempt, from: 'trainer', classId: view.classId })}
+            onOpen={(attempt) => {
+              // Class lists leave out the conversation; load the whole call before showing it.
+              const classId = view.classId
+              const show = (full: Attempt) => setView({ name: 'score', attempt: full, from: 'trainer', classId })
+              if (!attempt.partial) return show(attempt)
+              getCall(attempt.id).then(show, (err) =>
+                window.alert(err instanceof Error ? err.message : 'Could not open that call. Try again.'),
+              )
+            }}
             onBuild={(classInfo, scenario, flow) => setView({ name: 'builder', classInfo, scenario, flow })}
             onTry={(scenario, classInfo, flow) => startCall(scenario, classInfo, flow)}
             onFlows={() => setView({ name: 'flows' })}

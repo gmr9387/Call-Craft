@@ -81,6 +81,9 @@ export const setDisabled = (userId: string, disabled: boolean) =>
 export const updatePerson = (userId: string, name: string, email: string) =>
   post('/api/people', { action: 'update', userId, name, email })
 
+export const setRole = (userId: string, role: 'admin' | 'trainer' | 'agent') =>
+  post('/api/people', { action: 'role', userId, role })
+
 export const deletePerson = (userId: string, confirmEmail: string) =>
   post<{ ok: true; calls: number }>('/api/people', { action: 'delete', userId, confirmEmail })
 
@@ -130,6 +133,7 @@ export interface Check {
 export const systemStatus = () => post<SystemStatus>('/api/admin', { action: 'status' })
 export const saveLimits = (limits: SpendingLimits) => post('/api/admin', { action: 'limits', ...limits })
 export const checkSystem = () => post<{ ai: Check; database: Check }>('/api/admin', { action: 'check-ai' })
+export const exportEverything = () => post<Record<string, unknown>>('/api/admin', { action: 'export' })
 export const saveRetention = (days: number) =>
   post<{ retentionDays: number; deleted: number }>('/api/admin', { action: 'retention', days })
 
@@ -204,6 +208,16 @@ export const loadDashboard = (classId: string) => post<ClassDashboard>('/api/cla
 
 export const removeAgent = (classId: string, userId: string) =>
   post('/api/classes', { action: 'remove-agent', classId, userId })
+
+// One call with its full conversation (lists leave the conversation out).
+export async function getCall(attemptId: string): Promise<SavedAttempt> {
+  return (await post<{ attempt: SavedAttempt }>('/api/classes', { action: 'call', attemptId })).attempt
+}
+
+// Every call in a class, for the results download.
+export async function exportClassCalls(classId: string): Promise<SavedAttempt[]> {
+  return (await post<{ attempts: SavedAttempt[] }>('/api/classes', { action: 'export', classId })).attempts
+}
 
 export async function myClass(): Promise<JoinResult | null> {
   return (await post<{ joined: JoinResult | null }>('/api/classes', { action: 'mine' })).joined
