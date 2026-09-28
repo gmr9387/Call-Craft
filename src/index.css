@@ -1160,6 +1160,7 @@ nav .link.active {
   width: 100%;
   aspect-ratio: 5 / 4;
   object-fit: cover;
+  object-position: 62% 40%;
   border-radius: 16px;
 }
 
@@ -1286,6 +1287,7 @@ nav .link.active {
   width: 100%;
   aspect-ratio: 4 / 3;
   object-fit: cover;
+  object-position: 60% 50%;
   border-radius: 16px;
 }
 
