@@ -29,6 +29,17 @@ export interface ClassAgent {
   lastSeenAt: string | null;
 }
 
+export type CallResult = "pass" | "needs_work" | "fail";
+
+// A trainer's review of a call: a note for the agent, and optionally a corrected score and result.
+export interface CallReview {
+  note: string | null;
+  score: number | null;
+  result: CallResult | null;
+  by: string | null;
+  at: string;
+}
+
 export interface SavedAttempt {
   id: string;
   // The account that made the call.
@@ -41,23 +52,38 @@ export interface SavedAttempt {
   durationSec: number;
   transcript: Turn[];
   scorecard: ScorecardResult;
+  review?: CallReview;
+}
+
+// What an agent must pass to count as ready for live calls.
+export interface Requirements {
+  // Scenario ids (built-in slugs or trainer-built ids). Empty means readiness isn't tracked.
+  scenarioIds: string[];
+  // Minimum score for a passing call to count.
+  passScore: number;
 }
 
 export interface ClassDashboard {
   classInfo: ClassInfo;
   attempts: SavedAttempt[];
-  // Trainer-built scenarios for this class, including archived ones.
+  // Trainer-built scenarios on the class's call flow, including hidden ones.
   scenarios: Scenario[];
   agents: ClassAgent[];
   flow: CallFlow;
   trainerId: string | null;
   archived: boolean;
+  requirements: Requirements;
+  // For each agent (by user id), the required scenarios they've passed.
+  passed: Record<string, string[]>;
 }
 
 export interface JoinResult {
   classInfo: ClassInfo;
-  // Active trainer-built scenarios agents in this class can practice.
+  // Trainer-built scenarios on the class's call flow that agents can practice.
   scenarios: Scenario[];
   // The call flow the class practices.
   flow: CallFlow;
+  requirements: Requirements;
+  // The required scenarios this agent has passed.
+  passed: string[];
 }

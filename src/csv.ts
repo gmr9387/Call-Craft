@@ -1,5 +1,5 @@
 import type { ClassDashboard } from '../shared/classes.ts'
-import { attemptTitle } from './history.ts'
+import { attemptTitle, resultOf, scoreOf } from './history.ts'
 
 type Cell = string | number | null | undefined
 
@@ -30,13 +30,15 @@ const RESULT = { pass: 'Pass', needs_work: 'Needs work', fail: 'Fail' } as const
 // Every scored call in the class, one row per call.
 export function downloadResults(dashboard: ClassDashboard): void {
   const rows: Cell[][] = [
-    ['Date', 'Agent', 'Scenario', 'Score', 'Result', 'Rules broken', 'Missed steps', 'Minutes'],
+    ['Date', 'Agent', 'Scenario', 'Score', 'Result', 'AI score', 'Trainer note', 'Rules broken', 'Missed steps', 'Minutes'],
     ...dashboard.attempts.map((a) => [
       new Date(a.startedAt).toLocaleString(),
       a.agentName,
       attemptTitle(a),
+      scoreOf(a),
+      RESULT[resultOf(a)],
       Math.round(a.scorecard.overall_score),
-      RESULT[a.scorecard.result],
+      a.review?.note ?? '',
       a.scorecard.compliance
         .filter((c) => c.status === 'violation')
         .map((c) => c.rule)
@@ -51,21 +53,30 @@ export function downloadResults(dashboard: ClassDashboard): void {
   downloadCsv(`${fileSafe(dashboard.classInfo.name)}-results-${today()}.csv`, rows)
 }
 
+// "Ready", "2 of 3", or blank when the class doesn't track readiness.
+export function readiness(dashboard: ClassDashboard, userId: string): string {
+  const required = dashboard.requirements.scenarioIds.length
+  if (!required) return ''
+  const done = dashboard.passed[userId]?.length ?? 0
+  return done >= required ? 'Ready' : `${done} of ${required}`
+}
+
 // One row per agent: how much they've practiced and how they're doing.
 export function downloadRoster(dashboard: ClassDashboard): void {
   const rows: Cell[][] = [
-    ['Agent', 'Email', 'Calls', 'Average score', 'Calls passed', 'Last active'],
+    ['Agent', 'Email', 'Calls', 'Average score', 'Calls passed', 'Ready for live calls', 'Last active'],
     ...dashboard.agents.map((agent) => {
       const calls = dashboard.attempts.filter((a) => a.userId === agent.id)
       const avg = calls.length
-        ? Math.round(calls.reduce((n, a) => n + a.scorecard.overall_score, 0) / calls.length)
+        ? Math.round(calls.reduce((n, a) => n + scoreOf(a), 0) / calls.length)
         : null
       return [
         agent.name,
         agent.email,
         calls.length,
         avg,
-        calls.filter((a) => a.scorecard.result === 'pass').length,
+        calls.filter((a) => resultOf(a) === 'pass').length,
+        readiness(dashboard, agent.id),
         agent.lastSeenAt ? new Date(agent.lastSeenAt).toLocaleDateString() : '',
       ]
     }),

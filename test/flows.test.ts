@@ -60,12 +60,12 @@ describe.skipIf(!hasDb)('call flows (database)', () => {
     const joined = (await sam.post(classes, { action: 'mine' })).body.joined
     expect(joined.flow).toMatchObject({ id: flow.id, company: 'Brightside Dental' })
 
-    const { body: drafted } = await t.post(scenarios, { action: 'draft', classId: cls.id, description: 'Nervous patient' })
+    const { body: drafted } = await t.post(scenarios, { action: 'draft', flowId: flow.id, description: 'Nervous patient' })
     expect(fake().requests.at(-1)!.body.messages[0].content).toContain('Brightside Dental')
 
     // Skipped steps are limited to steps in this flow.
     const scenario = { ...drafted.draft, notApplicable: [flow.steps[1].id, 'qualify_military'] }
-    const created = (await t.post(scenarios, { action: 'create', classId: cls.id, scenario })).body.scenario
+    const created = (await t.post(scenarios, { action: 'create', flowId: flow.id, scenario })).body.scenario
     expect(created.notApplicable).toEqual([flow.steps[1].id])
 
     fake().requests.length = 0

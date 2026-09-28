@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { END_MARKERS, type Scenario, type Turn } from '../../shared/scenarios.ts'
 import type { CallFlow } from '../../shared/flows.ts'
+import type { ClassInfo } from '../../shared/classes.ts'
+import { clearActiveCall, saveActiveCall, type SavedCall } from '../activeCall.ts'
 import { getProspectReply, scoreCall } from '../api.ts'
 import type { Attempt } from '../history.ts'
 import CallerAvatar from './CallerAvatar.tsx'
@@ -11,8 +13,11 @@ interface Props {
   // The call flow for the call guide (the class's flow, or the built-in sample).
   flow: CallFlow
   agentName: string
-  // Trainer test call: not saved anywhere.
-  preview?: boolean
+  userId: string
+  // Trainer test call: not saved anywhere. The class is where "back" returns to.
+  preview?: ClassInfo
+  // An unfinished call to pick back up (after a refresh or crash).
+  resume?: SavedCall
   onScored: (attempt: Attempt, saveNote: SaveNote) => void
   onCancel: () => void
 }
@@ -37,20 +42,21 @@ function formatTime(sec: number): string {
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
 }
 
-export default function CallScreen({ scenario, flow, agentName, preview = false, onScored, onCancel }: Props) {
-  const [transcript, setTranscript] = useState<Turn[]>([])
+export default function CallScreen({ scenario, flow, agentName, userId, preview, resume, onScored, onCancel }: Props) {
+  const [transcript, setTranscript] = useState<Turn[]>(resume?.transcript ?? [])
   const [input, setInput] = useState('')
   const [waiting, setWaiting] = useState(false)
   const [phase, setPhase] = useState<Phase>('live')
-  const [endNote, setEndNote] = useState<string | null>(null)
+  const [endNote, setEndNote] = useState<string | null>(resume?.endNote ?? null)
   const [error, setError] = useState<string | null>(null)
   const [showGuide, setShowGuide] = useState(true)
   const [voiceOut, setVoiceOut] = useState(canSpeak)
   const [listening, setListening] = useState(false)
-  const [elapsed, setElapsed] = useState(0)
+  const [elapsed, setElapsed] = useState(resume?.elapsed ?? 0)
 
-  const [startedAt] = useState(() => new Date().toISOString())
+  const [startedAt] = useState(() => resume?.startedAt ?? new Date().toISOString())
   const voiceOutRef = useRef(voiceOut)
+  const resumed = useRef(!!resume)
   const recognition = useRef<Recognition | null>(null)
   const baseInput = useRef('')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -68,8 +74,18 @@ export default function CallScreen({ scenario, flow, agentName, preview = false,
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [transcript, waiting])
 
+  // Keep the call in this browser as it goes, so a refresh or crash doesn't lose it.
+  // Saved when the conversation changes, and every 10 seconds for the timer.
+  const saveSlot = Math.floor(elapsed / 10)
   useEffect(() => {
-    if (voiceOutRef.current) speak('Hello?')
+    if (transcript.length === 0) return
+    // The timer is saved to the nearest 10 seconds, so the call isn't saved every second.
+    const savedElapsed = saveSlot * 10
+    saveActiveCall({ userId, scenario, flow, preview: preview ?? null, transcript, startedAt, elapsed: savedElapsed, endNote })
+  }, [transcript, endNote, saveSlot, userId, scenario, flow, preview, startedAt])
+
+  useEffect(() => {
+    if (voiceOutRef.current && !resumed.current) speak('Hello?')
     return () => {
       stopSpeaking()
       recognition.current?.stop()
@@ -161,6 +177,7 @@ export default function CallScreen({ scenario, flow, agentName, preview = false,
           : result.className
             ? { ok: true, text: `Saved to ${result.className}. Your trainer can see this call.` }
             : { ok: true, text: 'Saved to My calls.' }
+      clearActiveCall()
       onScored(attempt, note)
     } catch (e) {
       setPhase('live')
@@ -272,10 +289,18 @@ export default function CallScreen({ scenario, flow, agentName, preview = false,
                 End call
               </button>
             </div>
+            <p className="muted small practice-only">Practice only: never type real customer information.</p>
           </div>
         ) : (
           <div className="composer-actions end-actions">
-            <button className="secondary" onClick={onCancel} disabled={phase === 'scoring'}>
+            <button
+              className="secondary"
+              onClick={() => {
+                clearActiveCall()
+                onCancel()
+              }}
+              disabled={phase === 'scoring'}
+            >
               Discard
             </button>
             <button

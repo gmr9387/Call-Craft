@@ -162,3 +162,62 @@ create table if not exists app_settings (
 );
 
 alter table app_settings enable row level security;
+
+-- ---- Scenarios belong to call flows ----
+-- Every class on a call flow shares its scenarios, so a new class doesn't start from scratch.
+-- flow_id null means the built-in sample flow. class_id is kept only for scenarios made before this.
+alter table scenarios add column if not exists flow_id uuid references call_flows (id) on delete cascade;
+alter table scenarios alter column class_id drop not null;
+update scenarios s set flow_id = c.flow_id
+  from classes c
+  where s.class_id = c.id and s.flow_id is null and c.flow_id is not null;
+create index if not exists scenarios_flow_idx on scenarios (flow_id, created_at);
+
+-- ---- Ready for live calls ----
+-- The scenarios an agent must pass (at or above pass_score) to count as ready.
+alter table classes add column if not exists required_scenarios jsonb not null default '[]'::jsonb;
+alter table classes add column if not exists pass_score integer not null default 80;
+alter table classes drop constraint if exists classes_pass_score_check;
+alter table classes add constraint classes_pass_score_check check (pass_score between 0 and 100);
+
+-- ---- Trainer reviews ----
+-- A trainer's note on a call, and optionally a corrected score and result.
+alter table attempts add column if not exists review_note text check (char_length(review_note) <= 2000);
+alter table attempts add column if not exists review_score integer check (review_score between 0 and 100);
+alter table attempts add column if not exists review_result text check (review_result in ('pass', 'needs_work', 'fail'));
+alter table attempts add column if not exists reviewed_by_name text;
+alter table attempts add column if not exists reviewed_at timestamptz;
+create index if not exists attempts_created_idx on attempts (created_at);
+
+-- ---- Activity log ----
+-- Who did what: invites, resets, changes to people, classes, call flows, and settings.
+create table if not exists audit_log (
+  id bigserial primary key,
+  at timestamptz not null default now(),
+  actor_id uuid references users (id) on delete set null,
+  actor_name text not null,
+  action text not null,
+  target text not null
+);
+
+create index if not exists audit_log_at_idx on audit_log (at desc);
+alter table audit_log enable row level security;
+
+-- ---- Indexes for lookups by foreign key ----
+create index if not exists classes_flow_idx on classes (flow_id);
+create index if not exists account_links_user_idx on account_links (user_id);
+create index if not exists account_links_created_by_idx on account_links (created_by);
+create index if not exists audit_log_actor_idx on audit_log (actor_id);
+create index if not exists call_flows_created_by_idx on call_flows (created_by);
+
+-- On Supabase, the helper that turns on row-level security for new tables shouldn't be callable
+-- through the public API. (It still runs automatically.) Skipped on other Postgres hosts.
+do $$
+begin
+  if exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'rls_auto_enable'
+  ) then
+    revoke execute on function public.rls_auto_enable() from public, anon, authenticated;
+  end if;
+end $$;

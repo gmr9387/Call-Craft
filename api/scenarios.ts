@@ -1,17 +1,27 @@
-import { canManageClass, requireUser } from "../server/auth.js";
+import { requireUser } from "../server/auth.js";
+import { logActivity } from "../server/audit.js";
 import { draftScenario } from "../server/coach.js";
-import { classById, createScenario, setScenarioArchived, updateScenario } from "../server/db.js";
-import { flowForClass } from "../server/flows.js";
+import { createScenario, resolveFlow, setScenarioArchived, updateScenario } from "../server/db.js";
+import { flowById } from "../server/flows.js";
 import { checkUsage } from "../server/limits.js";
 import { cleanId, cleanText, errorResponse, json, readJson } from "../server/http.js";
 import { ScenarioInput } from "../shared/scenarioInput.js";
 import { isCustomScenarioId } from "../shared/scenarios.js";
+import { BUILTIN_FLOW_ID } from "../shared/flows.js";
 
-const NOT_FOUND = "That class or scenario wasn't found.";
+const NOT_FOUND = "That call flow or scenario wasn't found.";
 
-// Scenario builder endpoint, for the trainers and admins who manage the class.
+// The call flow from the body: null for the built-in sample, the flow's id, or undefined if it doesn't exist.
+async function flowChoice(value: unknown): Promise<string | null | undefined> {
+  if (value === BUILTIN_FLOW_ID) return null;
+  const id = cleanId(value);
+  return id && (await flowById(id)) ? id : undefined;
+}
+
+// Scenario builder endpoint, for trainers and admins. Scenarios belong to a call flow, so every
+// class on that flow shares them.
 // - "draft": turn a one-line description into a full scenario draft (not saved).
-// - "create" / "update": save a scenario to the class.
+// - "create" / "update": save a scenario to the call flow.
 // - "archive": hide or restore a scenario for agents.
 export async function POST(request: Request): Promise<Response> {
   const body = await readJson(request);
@@ -19,17 +29,16 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const user = await requireUser(request, "admin", "trainer");
-    const classId = cleanId(body.classId);
-    if (!classId || !(await canManageClass(user, classId))) return json({ error: NOT_FOUND }, 404);
+    const flowId = await flowChoice(body.flowId);
+    if (flowId === undefined) return json({ error: NOT_FOUND }, 404);
+    const flow = await resolveFlow(flowId);
 
     switch (body.action) {
       case "draft": {
         const description = cleanText(body.description, 1000);
         if (!description) return json({ error: "Describe the scenario in a sentence or two." }, 400);
-        const cls = await classById(classId);
-        if (!cls) return json({ error: NOT_FOUND }, 404);
-        await checkUsage("draft", request, cls.classCode, user.id);
-        return json({ draft: await draftScenario(description, await flowForClass(classId)) });
+        await checkUsage("draft", request, `flow:${flow.id}`, user.id);
+        return json({ draft: await draftScenario(description, flow) });
       }
       case "create":
       case "update": {
@@ -37,21 +46,29 @@ export async function POST(request: Request): Promise<Response> {
         if (!parsed.success) {
           return json({ error: parsed.error.issues[0]?.message ?? "Check the scenario fields." }, 400);
         }
-        // Skipped steps must be steps of this class's call flow.
-        const flow = await flowForClass(classId);
+        // Skipped steps must be steps of this call flow.
         const stepIds = new Set(flow.steps.map((s) => s.id));
-        const input = { ...parsed.data, notApplicable: [...new Set(parsed.data.notApplicable)].filter((id) => stepIds.has(id)) };
+        const input = {
+          ...parsed.data,
+          notApplicable: [...new Set(parsed.data.notApplicable)].filter((id) => stepIds.has(id)),
+        };
         if (body.action === "create") {
-          return json({ scenario: await createScenario(classId, input) });
+          const scenario = await createScenario(flowId, input);
+          await logActivity(user, "Created scenario", `${scenario.title} (${flow.name})`);
+          return json({ scenario });
         }
         const id = typeof body.id === "string" && isCustomScenarioId(body.id) ? body.id : null;
-        const scenario = id ? await updateScenario(classId, id, input) : null;
-        return scenario ? json({ scenario }) : json({ error: NOT_FOUND }, 404);
+        const scenario = id ? await updateScenario(flowId, id, input) : null;
+        if (!scenario) return json({ error: NOT_FOUND }, 404);
+        await logActivity(user, "Edited scenario", `${scenario.title} (${flow.name})`);
+        return json({ scenario });
       }
       case "archive": {
         const id = typeof body.id === "string" && isCustomScenarioId(body.id) ? body.id : null;
-        const scenario = id ? await setScenarioArchived(classId, id, body.archived === true) : null;
-        return scenario ? json({ scenario }) : json({ error: NOT_FOUND }, 404);
+        const scenario = id ? await setScenarioArchived(flowId, id, body.archived === true) : null;
+        if (!scenario) return json({ error: NOT_FOUND }, 404);
+        await logActivity(user, scenario.archived ? "Hid scenario" : "Showed scenario", `${scenario.title} (${flow.name})`);
+        return json({ scenario });
       }
       default:
         return json({ error: "Unknown action." }, 400);

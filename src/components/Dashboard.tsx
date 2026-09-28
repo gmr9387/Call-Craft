@@ -2,13 +2,16 @@ import type { ClassInfo, JoinResult } from '../../shared/classes.ts'
 import { SCENARIOS, type Scenario } from '../../shared/scenarios.ts'
 import type { Me } from '../../shared/accounts.ts'
 import type { CallFlow } from '../../shared/flows.ts'
-import { attemptTitle, type Attempt } from '../history.ts'
+import type { Requirements } from '../../shared/classes.ts'
+import { attemptTitle, resultOf, scoreOf, type Attempt } from '../history.ts'
 import { ClassJoin } from './Home.tsx'
 import { useMyCalls } from '../useMyCalls.ts'
 
 interface Props {
   user: Me
   flow: CallFlow
+  // What this agent must pass to be ready for live calls, and what they've passed.
+  progress: { requirements: Requirements; passed: string[] } | null
   classInfo: ClassInfo | null
   classScenarios: Scenario[]
   onJoin: (result: JoinResult) => void
@@ -22,13 +25,14 @@ const RESULT_LABEL = { pass: '✓ Pass', needs_work: '! Needs work', fail: '✕ 
 
 // The first call the agent hasn't passed yet, trainer-made calls first.
 function nextUp(scenarios: Scenario[], attempts: Attempt[]): Scenario | undefined {
-  const passed = new Set(attempts.filter((a) => a.scorecard.result === 'pass').map((a) => a.scenarioId))
+  const passed = new Set(attempts.filter((a) => resultOf(a) === 'pass').map((a) => a.scenarioId))
   return scenarios.find((s) => !passed.has(s.id)) ?? scenarios[0]
 }
 
 export default function Dashboard({
   user,
   flow,
+  progress,
   classInfo,
   classScenarios,
   onJoin,
@@ -43,9 +47,9 @@ export default function Dashboard({
   // Sample calls only fit the sample call flow.
   const next = nextUp(flow.builtIn ? [...classScenarios, ...SCENARIOS] : classScenarios, attempts)
   const recent = attempts.slice(0, 5)
-  const passes = attempts.filter((a) => a.scorecard.result === 'pass').length
+  const passes = attempts.filter((a) => resultOf(a) === 'pass').length
   const average = attempts.length
-    ? Math.round(attempts.reduce((n, a) => n + a.scorecard.overall_score, 0) / attempts.length)
+    ? Math.round(attempts.reduce((n, a) => n + scoreOf(a), 0) / attempts.length)
     : null
 
   return (
@@ -93,6 +97,10 @@ export default function Dashboard({
         </section>
       </div>
 
+      {progress && progress.requirements.scenarioIds.length > 0 && (
+        <ReadyCard progress={progress} scenarios={[...classScenarios, ...SCENARIOS]} onStart={onStart} />
+      )}
+
       <div className="stat-row">
         <div className="card stat">
           <span className="stat-label">Practice calls</span>
@@ -134,8 +142,8 @@ export default function Dashboard({
               <li key={a.id}>
                 <span className="recent-title">{attemptTitle(a)}</span>
                 <span className="muted small">{new Date(a.startedAt).toLocaleDateString()}</span>
-                <span className="recent-score">{Math.round(a.scorecard.overall_score)}</span>
-                <span className={`status status-${a.scorecard.result}`}>{RESULT_LABEL[a.scorecard.result]}</span>
+                <span className="recent-score">{scoreOf(a)}</span>
+                <span className={`status status-${resultOf(a)}`}>{RESULT_LABEL[resultOf(a)]}</span>
                 <button className="link" onClick={() => onOpen(a)}>
                   View
                 </button>
@@ -145,5 +153,51 @@ export default function Dashboard({
         )}
       </section>
     </div>
+  )
+}
+
+function ReadyCard({
+  progress,
+  scenarios,
+  onStart,
+}: {
+  progress: { requirements: Requirements; passed: string[] }
+  scenarios: Scenario[]
+  onStart: (scenario: Scenario) => void
+}) {
+  const { scenarioIds, passScore } = progress.requirements
+  const done = scenarioIds.filter((id) => progress.passed.includes(id)).length
+  const ready = done >= scenarioIds.length
+  return (
+    <section className={`card ready-card ${ready ? 'is-ready' : ''}`}>
+      <div className="section-head">
+        <h2>{ready ? '✓ You’re ready for live calls' : 'Ready for live calls'}</h2>
+        <span className="muted">
+          {done} of {scenarioIds.length} passed
+        </span>
+      </div>
+      <p className="muted small">
+        {ready
+          ? 'You passed every required practice call. Let your trainer know.'
+          : `Pass each of these calls with a score of ${passScore} or higher.`}
+      </p>
+      <ul className="ready-list">
+        {scenarioIds.map((id) => {
+          const scenario = scenarios.find((s) => s.id === id)
+          const passed = progress.passed.includes(id)
+          return (
+            <li key={id} className={passed ? 'passed' : ''}>
+              <span aria-hidden>{passed ? '✓' : '○'}</span>
+              <span>{scenario?.title ?? 'A practice call'}</span>
+              {!passed && scenario && (
+                <button className="link" onClick={() => onStart(scenario)}>
+                  Practice it
+                </button>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }

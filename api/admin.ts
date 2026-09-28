@@ -1,11 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { requireUser } from "../server/auth.js";
 import { CoachError, pingAI } from "../server/coach.js";
-import { db, pingDb } from "../server/db.js";
+import { recentActivity, logActivity } from "../server/audit.js";
+import { db, pingDb, purgeOldCalls } from "../server/db.js";
 import { env } from "../server/env.js";
 import { anthropicReason, errorResponse, json, readJson } from "../server/http.js";
 import { checkUsage, spendingLimits, usageSummary, UsageLimitError } from "../server/limits.js";
-import { recentAiProblem, saveLimitSettings } from "../server/settings.js";
+import { recentAiProblem, retentionDays, saveLimitSettings, saveRetentionDays } from "../server/settings.js";
 
 const MAX_LIMIT = 1_000_000;
 
@@ -21,6 +22,7 @@ class LimitInputError extends Error {}
 // - "status": AI usage, spending limits, recent AI problems, and how many people are using CallCraft
 // - "limits": change the spending limits (takes effect within a minute)
 // - "check-ai": send one tiny AI request to see if the AI is working
+// - "retention": how many days to keep practice calls (0 keeps them forever)
 export async function POST(request: Request): Promise<Response> {
   const body = await readJson(request);
   if (!body) return json({ error: "Invalid JSON body." }, 400);
@@ -29,10 +31,14 @@ export async function POST(request: Request): Promise<Response> {
     const admin = await requireUser(request, "admin");
     switch (body.action) {
       case "status": {
-        const [usage, limits, aiProblem, [counts]] = await Promise.all([
+        // Keeping to the retention setting: delete calls that are past it.
+        const days = await retentionDays();
+        if (days) await purgeOldCalls(days).catch((error) => console.error("Deleting old calls failed:", error));
+        const [usage, limits, aiProblem, activity, [counts]] = await Promise.all([
           usageSummary(),
           spendingLimits(),
           recentAiProblem(),
+          recentActivity(),
           db()`
             select
               (select count(*)::int from users where role = 'agent' and not disabled) as agents,
@@ -46,6 +52,8 @@ export async function POST(request: Request): Promise<Response> {
           usage,
           limits,
           aiProblem,
+          retentionDays: days,
+          activity,
           models: {
             replies: env("CALLCRAFT_MODEL") ?? "claude-haiku-4-5",
             scoring: env("CALLCRAFT_SCORING_MODEL") ?? env("CALLCRAFT_MODEL") ?? "claude-haiku-4-5",
@@ -66,8 +74,20 @@ export async function POST(request: Request): Promise<Response> {
           draftsPerClassDaily: limitValue(body.draftsPerClassDaily, "The drafts limit"),
         };
         await saveLimitSettings(limits);
-        console.info(`Spending limits changed by ${admin.email}:`, limits);
+        await logActivity(
+          admin,
+          "Changed spending limits",
+          `${limits.dailyTotal}/day, ${limits.perClientHourly}/person/hour, ${limits.draftsPerClassDaily} drafts`,
+        );
         return json({ limits });
+      }
+      case "retention": {
+        const days = limitValue(body.days, "The number of days");
+        if (days > 0 && days < 30) throw new LimitInputError("Keep calls for at least 30 days, or 0 to keep them forever.");
+        await saveRetentionDays(days);
+        await logActivity(admin, "Changed data retention", days ? `keep calls ${days} days` : "keep calls forever");
+        const deleted = days ? await purgeOldCalls(days) : 0;
+        return json({ retentionDays: days, deleted });
       }
       case "check-ai": {
         const database = await pingDb().then(

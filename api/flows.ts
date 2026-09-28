@@ -1,4 +1,5 @@
 import { requireUser } from "../server/auth.js";
+import { logActivity } from "../server/audit.js";
 import { draftFlow } from "../server/coach.js";
 import { createFlow, listFlows, setFlowArchived, updateFlow } from "../server/flows.js";
 import { checkUsage } from "../server/limits.js";
@@ -34,15 +35,23 @@ export async function POST(request: Request): Promise<Response> {
         if (!parsed.success) {
           return json({ error: parsed.error.issues[0]?.message ?? "Check the call flow fields." }, 400);
         }
-        if (body.action === "create") return json({ flow: await createFlow(user.id, parsed.data) });
+        if (body.action === "create") {
+          const flow = await createFlow(user.id, parsed.data);
+          await logActivity(user, "Created call flow", flow.name);
+          return json({ flow });
+        }
         const id = cleanId(body.id);
         const flow = id ? await updateFlow(id, parsed.data) : null;
-        return flow ? json({ flow }) : json({ error: NOT_FOUND }, 404);
+        if (!flow) return json({ error: NOT_FOUND }, 404);
+        await logActivity(user, "Edited call flow", flow.name);
+        return json({ flow });
       }
       case "archive": {
         const id = cleanId(body.id);
         const flow = id ? await setFlowArchived(id, body.archived === true) : null;
-        return flow ? json({ flow }) : json({ error: NOT_FOUND }, 404);
+        if (!flow) return json({ error: NOT_FOUND }, 404);
+        await logActivity(user, flow.archived ? "Archived call flow" : "Brought back call flow", flow.name);
+        return json({ flow });
       }
       default:
         return json({ error: "Unknown action." }, 400);

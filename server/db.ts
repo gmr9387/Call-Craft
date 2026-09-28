@@ -5,13 +5,16 @@ import type { Scenario, Turn } from "../shared/scenarios.js";
 import type { ScorecardResult } from "../shared/scorecard.js";
 import type { ScenarioInputValue } from "../shared/scenarioInput.js";
 import { BUILTIN_FLOW } from "../shared/flows.js";
-import { flowForClass } from "./flows.js";
+import { flowById } from "./flows.js";
+import type { CallFlow } from "../shared/flows.js";
 import type {
+  CallResult,
   ClassAgent,
   ClassDashboard,
   ClassInfo,
   ClassSummary,
   JoinResult,
+  Requirements,
   SavedAttempt,
 } from "../shared/classes.js";
 
@@ -63,10 +66,38 @@ interface ClassRow {
   name: string;
   class_code: string;
   trainer_id: string | null;
+  flow_id: string | null;
   archived: boolean;
+  required_scenarios: string[];
+  pass_score: number;
+}
+
+const CLASS_COLUMNS = "id, name, class_code, trainer_id, flow_id, archived, required_scenarios, pass_score";
+
+export interface ClassRecord extends ClassInfo {
+  trainerId: string | null;
+  // null means the built-in sample flow.
+  flowId: string | null;
+  archived: boolean;
+  requirements: Requirements;
 }
 
 const toClassInfo = (r: ClassRow): ClassInfo => ({ id: r.id, name: r.name, classCode: r.class_code });
+
+function toClassRecord(r: ClassRow): ClassRecord {
+  return {
+    ...toClassInfo(r),
+    trainerId: r.trainer_id,
+    flowId: r.flow_id,
+    archived: r.archived,
+    requirements: { scenarioIds: r.required_scenarios, passScore: r.pass_score },
+  };
+}
+
+// The call flow a class (or scenario) uses; null is the built-in sample.
+export async function resolveFlow(flowId: string | null): Promise<CallFlow> {
+  return (flowId ? await flowById(flowId) : null) ?? BUILTIN_FLOW;
+}
 
 // ---- Classes ----
 
@@ -78,18 +109,16 @@ export async function createClass(trainerId: string, name: string, flowId: strin
       insert into classes (name, class_code, trainer_id, flow_id)
       values (${name}, ${newClassCode()}, ${trainerId}, ${flowId})
       on conflict (class_code) do nothing
-      returning id, name, class_code, trainer_id, archived
+      returning ${db().unsafe(CLASS_COLUMNS)}
     `;
     if (rows.length) return toClassInfo(rows[0]);
   }
   throw new Error("Could not generate a unique class code.");
 }
 
-export async function classById(
-  id: string,
-): Promise<(ClassInfo & { trainerId: string | null; archived: boolean }) | null> {
-  const rows = await db()<ClassRow[]>`select id, name, class_code, trainer_id, archived from classes where id = ${id}`;
-  return rows[0] ? { ...toClassInfo(rows[0]), trainerId: rows[0].trainer_id, archived: rows[0].archived } : null;
+export async function classById(id: string): Promise<ClassRecord | null> {
+  const rows = await db()<ClassRow[]>`select ${db().unsafe(CLASS_COLUMNS)} from classes where id = ${id}`;
+  return rows[0] ? toClassRecord(rows[0]) : null;
 }
 
 // Classes a trainer runs, or every class when trainerId is null (admins).
@@ -122,6 +151,9 @@ export async function listClasses(trainerId: string | null): Promise<ClassSummar
 
 const DASHBOARD_LIMIT = 1000;
 
+const ATTEMPT_COLUMNS = `id, user_id, agent_name, scenario_id, scenario_title, started_at, duration_sec, transcript,
+  scorecard, review_note, review_score, review_result, reviewed_by_name, reviewed_at`;
+
 function toAttempt(r: postgres.Row): SavedAttempt {
   return {
     id: r.id,
@@ -133,7 +165,34 @@ function toAttempt(r: postgres.Row): SavedAttempt {
     durationSec: r.duration_sec,
     transcript: r.transcript,
     scorecard: r.scorecard,
+    review: r.reviewed_at
+      ? {
+          note: r.review_note ?? null,
+          score: r.review_score ?? null,
+          result: r.review_result ?? null,
+          by: r.reviewed_by_name ?? null,
+          at: new Date(r.reviewed_at).toISOString(),
+        }
+      : undefined,
   };
+}
+
+// For each person, the required scenarios they've passed at or above the pass score.
+// A trainer's corrected score and result count instead of the AI's.
+async function passedRequired(userIds: string[], req: Requirements): Promise<Record<string, string[]>> {
+  const passed: Record<string, string[]> = {};
+  if (!userIds.length || !req.scenarioIds.length) return passed;
+  const rows = await db()`
+    select user_id, array_agg(distinct scenario_id) as scenario_ids
+    from attempts
+    where user_id = any(${userIds}::uuid[])
+      and scenario_id = any(${req.scenarioIds}::text[])
+      and coalesce(review_result, result) = 'pass'
+      and coalesce(review_score, overall_score) >= ${req.passScore}
+    group by user_id
+  `;
+  for (const r of rows) passed[r.user_id] = r.scenario_ids;
+  return passed;
 }
 
 export async function classDashboard(classId: string): Promise<ClassDashboard | null> {
@@ -142,7 +201,7 @@ export async function classDashboard(classId: string): Promise<ClassDashboard | 
 
   const [attempts, agents, scenarios, flow] = await Promise.all([
     db()`
-      select id, user_id, agent_name, scenario_id, scenario_title, started_at, duration_sec, transcript, scorecard
+      select ${db().unsafe(ATTEMPT_COLUMNS)}
       from attempts
       where class_id = ${classId}
       order by created_at desc
@@ -154,8 +213,8 @@ export async function classDashboard(classId: string): Promise<ClassDashboard | 
       where class_id = ${classId} and role = 'agent'
       order by name
     `,
-    listScenarios(classId, true),
-    flowForClass(classId),
+    listScenarios(cls.flowId, true),
+    resolveFlow(cls.flowId),
   ]);
 
   return {
@@ -165,6 +224,11 @@ export async function classDashboard(classId: string): Promise<ClassDashboard | 
     flow,
     trainerId: cls.trainerId,
     archived: cls.archived,
+    requirements: cls.requirements,
+    passed: await passedRequired(
+      agents.map((a) => a.id as string),
+      cls.requirements,
+    ),
     agents: agents.map(
       (r): ClassAgent => ({
         id: r.id,
@@ -180,18 +244,28 @@ export async function classDashboard(classId: string): Promise<ClassDashboard | 
 // Archived classes can't be joined, so their codes stop working.
 export async function classByCode(code: string): Promise<ClassInfo | null> {
   const rows = await db()<ClassRow[]>`
-    select id, name, class_code, trainer_id, archived from classes
+    select ${db().unsafe(CLASS_COLUMNS)} from classes
     where class_code = ${normalizeClassCode(code)} and not archived
   `;
   return rows[0] ? toClassInfo(rows[0]) : null;
 }
 
-// What an agent in this class sees: the class and its active trainer-built scenarios.
-export async function classForAgent(classId: string): Promise<JoinResult | null> {
+// What an agent in this class sees: the class, its call flow and scenarios, and their progress.
+export async function classForAgent(classId: string, userId: string): Promise<JoinResult | null> {
   const cls = await classById(classId);
   if (!cls) return null;
-  const [scenarios, flow] = await Promise.all([listScenarios(cls.id, false), flowForClass(cls.id)]);
-  return { classInfo: { id: cls.id, name: cls.name, classCode: cls.classCode }, scenarios, flow };
+  const [scenarios, flow, passed] = await Promise.all([
+    listScenarios(cls.flowId, false),
+    resolveFlow(cls.flowId),
+    passedRequired([userId], cls.requirements),
+  ]);
+  return {
+    classInfo: { id: cls.id, name: cls.name, classCode: cls.classCode },
+    scenarios,
+    flow,
+    requirements: cls.requirements,
+    passed: passed[userId] ?? [],
+  };
 }
 
 // Moves an agent into the class with this code. Returns null if the code doesn't exist.
@@ -199,7 +273,7 @@ export async function joinClass(userId: string, classCode: string): Promise<Join
   const cls = await classByCode(classCode);
   if (!cls) return null;
   await db()`update users set class_id = ${cls.id} where id = ${userId}`;
-  return classForAgent(cls.id);
+  return classForAgent(cls.id, userId);
 }
 
 // Returns false when the agent isn't in that class.
@@ -224,16 +298,20 @@ export interface ClassChanges {
   flowId?: string | null;
   trainerId?: string;
   archived?: boolean;
+  requirements?: Requirements;
 }
 
 export async function updateClass(classId: string, changes: ClassChanges): Promise<boolean> {
   const sql = db();
+  const req = changes.requirements;
   const rows = await sql`
     update classes set
       name = ${changes.name ?? sql`name`},
       flow_id = ${changes.flowId === undefined ? sql`flow_id` : changes.flowId},
       trainer_id = ${changes.trainerId ?? sql`trainer_id`},
-      archived = ${changes.archived ?? sql`archived`}
+      archived = ${changes.archived ?? sql`archived`},
+      required_scenarios = ${req ? sql.json(req.scenarioIds) : sql`required_scenarios`},
+      pass_score = ${req ? req.passScore : sql`pass_score`}
     where id = ${classId}
     returning id
   `;
@@ -274,7 +352,7 @@ const MY_CALLS_LIMIT = 300;
 
 export async function myAttempts(userId: string): Promise<SavedAttempt[]> {
   const rows = await db()`
-    select id, user_id, agent_name, scenario_id, scenario_title, started_at, duration_sec, transcript, scorecard
+    select ${db().unsafe(ATTEMPT_COLUMNS)}
     from attempts
     where user_id = ${userId}
     order by created_at desc
@@ -283,19 +361,58 @@ export async function myAttempts(userId: string): Promise<SavedAttempt[]> {
   return rows.map(toAttempt);
 }
 
-// ---- Trainer-built scenarios ----
+// The class a call was saved to (null for calls outside a class), or undefined if there's no such call.
+export async function attemptClassId(attemptId: string): Promise<string | null | undefined> {
+  const rows = await db()`select class_id from attempts where id = ${attemptId}`;
+  return rows[0] ? (rows[0].class_id ?? null) : undefined;
+}
 
-export const MAX_SCENARIOS_PER_CLASS = 50;
+export interface ReviewInput {
+  note: string | null;
+  score: number | null;
+  result: CallResult | null;
+  byName: string;
+}
+
+// Saves a trainer's review. Sending an empty review clears it.
+export async function saveReview(attemptId: string, review: ReviewInput): Promise<SavedAttempt | null> {
+  const empty = !review.note && review.score === null && review.result === null;
+  const rows = await db()`
+    update attempts set
+      review_note = ${review.note},
+      review_score = ${review.score},
+      review_result = ${review.result},
+      reviewed_by_name = ${empty ? null : review.byName},
+      reviewed_at = ${empty ? null : db()`now()`}
+    where id = ${attemptId}
+    returning ${db().unsafe(ATTEMPT_COLUMNS)}
+  `;
+  return rows[0] ? toAttempt(rows[0]) : null;
+}
+
+// Deletes calls older than the retention period. Returns how many were deleted.
+export async function purgeOldCalls(days: number): Promise<number> {
+  if (!(days > 0)) return 0;
+  const rows = await db()`
+    delete from attempts where created_at < now() - ${`${days} days`}::interval returning id
+  `;
+  return rows.length;
+}
+
+// ---- Trainer-built scenarios ----
+// Scenarios belong to a call flow (null: the built-in sample), so every class on that flow shares them.
+
+export const MAX_SCENARIOS_PER_FLOW = 100;
 
 export class ScenarioLimitError extends Error {
   constructor() {
-    super(`A class can have up to ${MAX_SCENARIOS_PER_CLASS} scenarios. Archive or edit an existing one instead.`);
+    super(`A call flow can have up to ${MAX_SCENARIOS_PER_FLOW} scenarios. Hide or edit an existing one instead.`);
   }
 }
 
 interface ScenarioRow {
   id: string;
-  class_id: string;
+  flow_id: string | null;
   title: string;
   difficulty: Scenario["difficulty"];
   focus: string;
@@ -306,6 +423,9 @@ interface ScenarioRow {
   not_applicable: string[];
   archived: boolean;
 }
+
+const SCENARIO_COLUMNS =
+  "id, flow_id, title, difficulty, focus, lead_name, program, persona, success_criteria, not_applicable, archived";
 
 function toScenario(r: ScenarioRow): Scenario {
   return {
@@ -323,45 +443,43 @@ function toScenario(r: ScenarioRow): Scenario {
   };
 }
 
-async function listScenarios(classId: string, includeArchived: boolean): Promise<Scenario[]> {
+const onFlow = (flowId: string | null) => (flowId ? db()`flow_id = ${flowId}` : db()`flow_id is null`);
+
+export async function listScenarios(flowId: string | null, includeArchived: boolean): Promise<Scenario[]> {
   const rows = await db()<ScenarioRow[]>`
-    select id, class_id, title, difficulty, focus, lead_name, program, persona, success_criteria, not_applicable, archived
+    select ${db().unsafe(SCENARIO_COLUMNS)}
     from scenarios
-    where class_id = ${classId} ${includeArchived ? db()`` : db()`and not archived`}
+    where ${onFlow(flowId)} ${includeArchived ? db()`` : db()`and not archived`}
     order by created_at
   `;
   return rows.map(toScenario);
 }
 
-// A trainer-built scenario and the class it belongs to. Archived scenarios still resolve,
+// A trainer-built scenario and the call flow it belongs to. Hidden scenarios still resolve,
 // so calls already in progress can finish and be scored.
-export async function scenarioWithClass(id: string): Promise<{ scenario: Scenario; classId: string } | null> {
-  const rows = await db()<ScenarioRow[]>`
-    select id, class_id, title, difficulty, focus, lead_name, program, persona, success_criteria, not_applicable, archived
-    from scenarios
-    where id = ${id}
-  `;
-  return rows[0] ? { scenario: toScenario(rows[0]), classId: rows[0].class_id } : null;
+export async function scenarioWithFlow(id: string): Promise<{ scenario: Scenario; flowId: string | null } | null> {
+  const rows = await db()<ScenarioRow[]>`select ${db().unsafe(SCENARIO_COLUMNS)} from scenarios where id = ${id}`;
+  return rows[0] ? { scenario: toScenario(rows[0]), flowId: rows[0].flow_id } : null;
 }
 
-export async function createScenario(classId: string, input: ScenarioInputValue): Promise<Scenario> {
-  const [{ count }] = await db()`select count(*)::int as count from scenarios where class_id = ${classId}`;
-  if (count >= MAX_SCENARIOS_PER_CLASS) throw new ScenarioLimitError();
+export async function createScenario(flowId: string | null, input: ScenarioInputValue): Promise<Scenario> {
+  const [{ count }] = await db()`select count(*)::int as count from scenarios where ${onFlow(flowId)}`;
+  if (count >= MAX_SCENARIOS_PER_FLOW) throw new ScenarioLimitError();
   const rows = await db()<ScenarioRow[]>`
     insert into scenarios (
-      class_id, title, difficulty, focus, lead_name, program, persona, success_criteria, not_applicable
+      flow_id, title, difficulty, focus, lead_name, program, persona, success_criteria, not_applicable
     ) values (
-      ${classId}, ${input.title}, ${input.difficulty}, ${input.focus}, ${input.leadName}, ${input.program},
+      ${flowId}, ${input.title}, ${input.difficulty}, ${input.focus}, ${input.leadName}, ${input.program},
       ${input.persona}, ${db().json(input.successCriteria)}, ${db().json(input.notApplicable)}
     )
-    returning id, class_id, title, difficulty, focus, lead_name, program, persona, success_criteria, not_applicable, archived
+    returning ${db().unsafe(SCENARIO_COLUMNS)}
   `;
   return toScenario(rows[0]);
 }
 
-// Returns null when the scenario isn't in that class.
+// Returns null when the scenario isn't on that call flow.
 export async function updateScenario(
-  classId: string,
+  flowId: string | null,
   id: string,
   input: ScenarioInputValue,
 ): Promise<Scenario | null> {
@@ -376,17 +494,17 @@ export async function updateScenario(
       success_criteria = ${db().json(input.successCriteria)},
       not_applicable = ${db().json(input.notApplicable)},
       updated_at = now()
-    where id = ${id} and class_id = ${classId}
-    returning id, class_id, title, difficulty, focus, lead_name, program, persona, success_criteria, not_applicable, archived
+    where id = ${id} and ${onFlow(flowId)}
+    returning ${db().unsafe(SCENARIO_COLUMNS)}
   `;
   return rows[0] ? toScenario(rows[0]) : null;
 }
 
-export async function setScenarioArchived(classId: string, id: string, archived: boolean): Promise<Scenario | null> {
+export async function setScenarioArchived(flowId: string | null, id: string, archived: boolean): Promise<Scenario | null> {
   const rows = await db()<ScenarioRow[]>`
     update scenarios set archived = ${archived}, updated_at = now()
-    where id = ${id} and class_id = ${classId}
-    returning id, class_id, title, difficulty, focus, lead_name, program, persona, success_criteria, not_applicable, archived
+    where id = ${id} and ${onFlow(flowId)}
+    returning ${db().unsafe(SCENARIO_COLUMNS)}
   `;
   return rows[0] ? toScenario(rows[0]) : null;
 }

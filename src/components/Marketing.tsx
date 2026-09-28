@@ -8,6 +8,7 @@ const TEAM_PHOTO = '/photos/marketing-team.webp'
 
 interface Props {
   onSignIn: () => void
+  onPrivacy: () => void
 }
 
 const FACTS = ['Built for contact center training teams', 'Scored the moment the call ends', 'No real customer data']
@@ -111,7 +112,7 @@ function Photo({ src, className, ...rest }: { src: string; className: string; 'd
   return <img className={className} src={src} alt="" onError={() => setMissing(true)} {...rest} />
 }
 
-export default function Marketing({ onSignIn }: Props) {
+export default function Marketing({ onSignIn, onPrivacy }: Props) {
   const [previewShown, setPreviewShown] = useState(false)
   const [showPreview] = useState(() => () => setPreviewShown(true))
   const rootRef = useScrollReveal(showPreview)
@@ -235,9 +236,14 @@ export default function Marketing({ onSignIn }: Props) {
 
       <footer className="mk-footer">
         <span className="muted small">© {YEAR} CallCraft · Practice callers are made up. No real customer data.</span>
-        <button className="link" onClick={onSignIn}>
-          Sign in
-        </button>
+        <span className="mk-footer-links">
+          <button className="link" onClick={onPrivacy}>
+            Privacy and terms
+          </button>
+          <button className="link" onClick={onSignIn}>
+            Sign in
+          </button>
+        </span>
       </footer>
     </div>
   )

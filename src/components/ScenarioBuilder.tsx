@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import type { ClassInfo } from '../../shared/classes.ts'
+import type { CallFlow } from '../../shared/flows.ts'
 import { DIFFICULTIES, type Scenario } from '../../shared/scenarios.ts'
 import { draftScenario, saveScenario, type ScenarioFields } from '../api.ts'
 
 interface Props {
-  classInfo: ClassInfo
+  // Scenarios belong to the call flow, so every class on it gets this scenario.
+  flow: CallFlow
   // The scenario being edited, or null for a new one.
   scenario: Scenario | null
   onSaved: (scenario: Scenario, tryIt: boolean) => void
@@ -41,7 +42,7 @@ const IDEAS = [
   'Someone who thinks this call is a scam',
 ]
 
-export default function ScenarioBuilder({ classInfo, scenario, onSaved, onCancel }: Props) {
+export default function ScenarioBuilder({ flow, scenario, onSaved, onCancel }: Props) {
   const [fields, setFields] = useState<ScenarioFields>(() => (scenario ? fieldsFrom(scenario) : EMPTY))
   const [description, setDescription] = useState('')
   const [drafting, setDrafting] = useState(false)
@@ -61,7 +62,7 @@ export default function ScenarioBuilder({ classInfo, scenario, onSaved, onCancel
     setDrafting(true)
     setError(null)
     try {
-      const draft = await draftScenario(classInfo.id, description)
+      const draft = await draftScenario(flow.id, description)
       setFields({ ...draft, successCriteria: draft.successCriteria.length ? draft.successCriteria : [''] })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not write the scenario.')
@@ -75,7 +76,7 @@ export default function ScenarioBuilder({ classInfo, scenario, onSaved, onCancel
     setError(null)
     try {
       const cleaned = { ...fields, successCriteria: fields.successCriteria.map((g) => g.trim()).filter(Boolean) }
-      onSaved(await saveScenario(classInfo.id, cleaned, scenario?.id), tryIt)
+      onSaved(await saveScenario(flow.id, cleaned, scenario?.id), tryIt)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the scenario.')
       setSaving(false)
@@ -94,7 +95,9 @@ export default function ScenarioBuilder({ classInfo, scenario, onSaved, onCancel
     <div className="builder">
       <div className="builder-head">
         <div>
-          <p className="eyebrow">{classInfo.name}</p>
+          <p className="eyebrow">
+            {flow.name} · shared by every class on this call flow
+          </p>
           <h1>{scenario ? 'Edit scenario' : 'New scenario'}</h1>
         </div>
         <button className="secondary" onClick={onCancel} disabled={saving}>

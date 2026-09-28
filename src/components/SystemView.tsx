@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { checkSystem, saveLimits, systemStatus, type Check, type SpendingLimits, type SystemStatus } from '../api.ts'
+import {
+  checkSystem,
+  saveLimits,
+  saveRetention,
+  systemStatus,
+  type Check,
+  type SpendingLimits,
+  type SystemStatus,
+} from '../api.ts'
+import { downloadCsv } from '../csv.ts'
 
 const ago = (iso: string) => {
   const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
@@ -19,7 +28,7 @@ const LIMIT_FIELDS: { key: keyof SpendingLimits; label: string; help: string }[]
   },
   {
     key: 'draftsPerClassDaily',
-    label: '"Write it for me" drafts per class, per day',
+    label: '"Write it for me" scenario drafts per call flow, per day',
     help: 'Scenario drafts use more AI than a normal reply.',
   },
 ]
@@ -29,12 +38,14 @@ export default function SystemView() {
   const [status, setStatus] = useState<SystemStatus | null>(null)
   const [limits, setLimits] = useState<Record<keyof SpendingLimits, string> | null>(null)
   const [checks, setChecks] = useState<{ ai: Check; database: Check } | null>(null)
+  const [retention, setRetention] = useState('0')
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const apply = useCallback((s: SystemStatus) => {
     setStatus(s)
+    setRetention(String(s.retentionDays))
     setLimits({
       dailyTotal: String(s.limits.dailyTotal),
       perClientHourly: String(s.limits.perClientHourly),
@@ -82,6 +93,28 @@ export default function SystemView() {
       setNotice('Limits saved. They take effect within a minute.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the limits.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const saveKeep = async (e: FormEvent) => {
+    e.preventDefault()
+    const days = Number(retention)
+    if (days > 0 && !confirm(`Delete practice calls older than ${days} days, now and from now on?`)) return
+    setBusy('retention')
+    setError(null)
+    setNotice(null)
+    try {
+      const res = await saveRetention(days)
+      apply(await systemStatus())
+      setNotice(
+        days
+          ? `Saved. Calls are kept for ${days} days. ${res.deleted} older ${res.deleted === 1 ? 'call was' : 'calls were'} deleted.`
+          : 'Saved. Calls are kept until someone deletes them.',
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save.')
     } finally {
       setBusy(null)
     }
@@ -226,6 +259,76 @@ export default function SystemView() {
           </button>
         </div>
       </form>
+
+      <form className="card limits-form" onSubmit={saveKeep}>
+        <h2>Keeping practice calls</h2>
+        <p className="muted small">
+          How long to keep practice calls (the words of the call and the scorecard). Older calls are deleted
+          automatically. Use 0 to keep them until someone deletes them. To delete one person's data, use People.
+        </p>
+        <label className="limit-row">
+          <span>
+            <strong>Keep calls for this many days</strong>
+            <small className="muted">At least 30, or 0 for no limit. For example, 365 keeps one year.</small>
+          </span>
+          <input type="number" min={0} step={1} value={retention} onChange={(e) => setRetention(e.target.value)} />
+        </label>
+        <div className="actions-right">
+          <button
+            className="primary"
+            type="submit"
+            disabled={busy === 'retention' || retention === String(status.retentionDays)}
+          >
+            {busy === 'retention' ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </form>
+
+      <section className="card">
+        <div className="section-head">
+          <h2>Activity</h2>
+          {status.activity.length > 0 && (
+            <button
+              className="secondary"
+              onClick={() =>
+                downloadCsv(`callcraft-activity-${new Date().toISOString().slice(0, 10)}.csv`, [
+                  ['When', 'Who', 'What', 'Details'],
+                  ...status.activity.map((e) => [new Date(e.at).toLocaleString(), e.actor, e.action, e.target]),
+                ])
+              }
+            >
+              ⬇ Download (spreadsheet)
+            </button>
+          )}
+        </div>
+        <p className="muted small">The latest invites, password resets, and changes to people, classes, and settings.</p>
+        {status.activity.length === 0 ? (
+          <p className="muted">Nothing yet.</p>
+        ) : (
+          <div className="table-wrap activity-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Who</th>
+                  <th>What</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.activity.map((e, i) => (
+                  <tr key={`${e.at}-${i}`}>
+                    <td>{new Date(e.at).toLocaleString()}</td>
+                    <td>{e.actor}</td>
+                    <td>{e.action}</td>
+                    <td>{e.target}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   )
 }

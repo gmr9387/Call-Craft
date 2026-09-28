@@ -14,7 +14,7 @@ export interface AiProblem {
   at: string;
 }
 
-type Settings = { limits?: LimitSettings; ai_problem?: AiProblem };
+type Settings = { limits?: LimitSettings; ai_problem?: AiProblem; retention?: { days: number } };
 
 const CACHE_MS = 30_000;
 let cache: { at: number; value: Settings } | null = null;
@@ -48,6 +48,15 @@ async function setSetting(key: keyof Settings, value: unknown): Promise<void> {
 
 export async function saveLimitSettings(limits: LimitSettings): Promise<void> {
   await setSetting("limits", limits);
+}
+
+// How many days practice calls are kept; 0 means forever.
+export async function retentionDays(): Promise<number> {
+  return (await getSettings()).retention?.days ?? 0;
+}
+
+export async function saveRetentionDays(days: number): Promise<void> {
+  await setSetting("retention", { days });
 }
 
 // Remembers an AI failure (bad key, no credit, outage). Never throws.

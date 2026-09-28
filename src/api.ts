@@ -1,5 +1,12 @@
 import type { AuthStatus, LinkInfo, Me, Person } from '../shared/accounts.ts'
-import type { ClassDashboard, ClassInfo, ClassSummary, JoinResult, SavedAttempt } from '../shared/classes.ts'
+import type {
+  CallResult,
+  ClassDashboard,
+  ClassInfo,
+  ClassSummary,
+  JoinResult,
+  SavedAttempt,
+} from '../shared/classes.ts'
 import type { CallFlow, FlowInputValue, FlowSummary } from '../shared/flows.ts'
 import type { ScenarioInputValue } from '../shared/scenarioInput.ts'
 import type { Scenario, Turn } from '../shared/scenarios.ts'
@@ -74,6 +81,9 @@ export const setDisabled = (userId: string, disabled: boolean) =>
 export const updatePerson = (userId: string, name: string, email: string) =>
   post('/api/people', { action: 'update', userId, name, email })
 
+export const deletePerson = (userId: string, confirmEmail: string) =>
+  post<{ ok: true; calls: number }>('/api/people', { action: 'delete', userId, confirmEmail })
+
 // ---- Call flows ----
 
 export async function listFlows(): Promise<FlowSummary[]> {
@@ -106,6 +116,8 @@ export interface SystemStatus {
   }
   limits: SpendingLimits
   aiProblem: { message: string; at: string } | null
+  retentionDays: number
+  activity: { at: string; actor: string; action: string; target: string }[]
   models: { replies: string; scoring: string }
   counts: { agents: number; staff: number; classes: number; callsToday: number; activeThisWeek: number }
 }
@@ -118,6 +130,8 @@ export interface Check {
 export const systemStatus = () => post<SystemStatus>('/api/admin', { action: 'status' })
 export const saveLimits = (limits: SpendingLimits) => post('/api/admin', { action: 'limits', ...limits })
 export const checkSystem = () => post<{ ai: Check; database: Check }>('/api/admin', { action: 'check-ai' })
+export const saveRetention = (days: number) =>
+  post<{ retentionDays: number; deleted: number }>('/api/admin', { action: 'retention', days })
 
 // ---- Practice calls ----
 
@@ -160,8 +174,17 @@ export async function createClass(name: string, flowId: string): Promise<ClassIn
   return (await post<{ classInfo: ClassInfo }>('/api/classes', { action: 'create', name, flowId })).classInfo
 }
 
-export const updateClass = (classId: string, changes: { name?: string; flowId?: string; archived?: boolean }) =>
-  post('/api/classes', { action: 'update', classId, ...changes })
+export const updateClass = (
+  classId: string,
+  changes: { name?: string; flowId?: string; archived?: boolean; requiredScenarios?: string[]; passScore?: number },
+) => post('/api/classes', { action: 'update', classId, ...changes })
+
+export async function reviewCall(
+  attemptId: string,
+  review: { note: string; score: number | null; result: CallResult | null },
+): Promise<SavedAttempt> {
+  return (await post<{ attempt: SavedAttempt }>('/api/classes', { action: 'review', attemptId, ...review })).attempt
+}
 
 export const reassignClass = (classId: string, trainerId: string) =>
   post('/api/classes', { action: 'reassign', classId, trainerId })
@@ -182,22 +205,23 @@ export const joinClass = (classCode: string) => post<JoinResult>('/api/classes',
 
 // ---- Scenario builder ----
 
-export async function draftScenario(classId: string, description: string): Promise<ScenarioFields> {
-  const { draft } = await post<{ draft: ScenarioFields }>('/api/scenarios', { action: 'draft', classId, description })
+// Scenarios belong to a call flow ('builtin' for the sample flow), shared by every class on it.
+export async function draftScenario(flowId: string, description: string): Promise<ScenarioFields> {
+  const { draft } = await post<{ draft: ScenarioFields }>('/api/scenarios', { action: 'draft', flowId, description })
   return draft
 }
 
-export async function saveScenario(classId: string, fields: ScenarioFields, id?: string): Promise<Scenario> {
+export async function saveScenario(flowId: string, fields: ScenarioFields, id?: string): Promise<Scenario> {
   const { scenario } = await post<{ scenario: Scenario }>('/api/scenarios', {
     action: id ? 'update' : 'create',
-    classId,
+    flowId,
     id,
     scenario: fields,
   })
   return scenario
 }
 
-export async function archiveScenario(classId: string, id: string, archived: boolean): Promise<Scenario> {
-  const { scenario } = await post<{ scenario: Scenario }>('/api/scenarios', { action: 'archive', classId, id, archived })
+export async function archiveScenario(flowId: string, id: string, archived: boolean): Promise<Scenario> {
+  const { scenario } = await post<{ scenario: Scenario }>('/api/scenarios', { action: 'archive', flowId, id, archived })
   return scenario
 }

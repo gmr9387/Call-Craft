@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { Me } from '../shared/accounts.ts'
-import type { ClassInfo, JoinResult } from '../shared/classes.ts'
+import type { ClassInfo, JoinResult, Requirements } from '../shared/classes.ts'
 import { getScenario, type Scenario } from '../shared/scenarios.ts'
 import { BUILTIN_FLOW, type CallFlow } from '../shared/flows.ts'
 import { authStatus, logout, myClass, SIGNED_OUT_EVENT } from './api.ts'
@@ -14,11 +14,13 @@ import Marketing from './components/Marketing.tsx'
 import Dashboard from './components/Dashboard.tsx'
 import MyCalls from './components/MyCalls.tsx'
 import AuthScreen, { type AuthMode } from './components/AuthScreen.tsx'
+import { clearActiveCall, loadActiveCall, type SavedCall } from './activeCall.ts'
 import PeopleView from './components/PeopleView.tsx'
 import AccountView from './components/AccountView.tsx'
 import FlowsView, { FlowBuilder } from './components/FlowsView.tsx'
 import SystemView from './components/SystemView.tsx'
 import HelpView from './components/HelpView.tsx'
+import PrivacyView from './components/PrivacyView.tsx'
 
 type View =
   | { name: 'dashboard' }
@@ -28,9 +30,10 @@ type View =
   | { name: 'people' }
   | { name: 'system' }
   | { name: 'help' }
+  | { name: 'privacy' }
   | { name: 'flows' }
   | { name: 'flow-builder'; flow: CallFlow | null; copy?: boolean }
-  | { name: 'call'; scenario: Scenario; flow: CallFlow; run: number; preview?: ClassInfo }
+  | { name: 'call'; scenario: Scenario; flow: CallFlow; run: number; preview?: ClassInfo; resume?: SavedCall }
   | {
       name: 'score'
       attempt: Attempt
@@ -100,11 +103,16 @@ type Session = { state: 'loading' } | { state: 'error'; message: string } | { st
 export default function App() {
   const [session, setSession] = useState<Session>({ state: 'loading' })
   const [authMode, setAuthMode] = useState<AuthMode | null>(modeFromUrl)
+  // Signed-out visitors can read the privacy page from the marketing page.
+  const [showPrivacy, setShowPrivacy] = useState(false)
   const [view, setView] = useState<View>({ name: 'dashboard' })
   const [classScenarios, setClassScenarios] = useState<Scenario[]>([])
   // The agent's class call flow (the built-in sample when not in a class).
   const [classFlow, setClassFlow] = useState<CallFlow>(BUILTIN_FLOW)
+  const [progress, setProgress] = useState<{ requirements: Requirements; passed: string[] } | null>(null)
   const [aiProblem, setAiProblem] = useState<string | null>(null)
+  // Bumped to re-read the saved unfinished call after it's discarded.
+  const [, setCallCheck] = useState(0)
   const isDesktop = useIsDesktop()
 
   useEffect(() => {
@@ -146,6 +154,7 @@ export default function App() {
         if (cancelled) return
         setClassScenarios(joined?.scenarios ?? [])
         setClassFlow(joined?.flow ?? BUILTIN_FLOW)
+        setProgress(joined ? { requirements: joined.requirements, passed: joined.passed } : null)
         setSession((s) =>
           s.state === 'ready' && s.user ? { ...s, user: { ...s.user, classInfo: joined?.classInfo ?? null } } : s,
         )
@@ -201,13 +210,31 @@ export default function App() {
     setAuthMode(null)
     setClassScenarios([])
     setClassFlow(BUILTIN_FLOW)
+    setProgress(null)
     setAiProblem(null)
     window.scrollTo(0, 0)
   }
 
   if (!user) {
     const mode = authMode ?? (session.needsSetup ? { kind: 'setup' as const } : null)
-    if (!mode) return <Marketing onSignIn={() => setAuthMode({ kind: 'login' })} />
+    if (showPrivacy) {
+      return (
+        <div className="public-page">
+          <PrivacyView onBack={() => setShowPrivacy(false)} />
+        </div>
+      )
+    }
+    if (!mode) {
+      return (
+        <Marketing
+          onSignIn={() => setAuthMode({ kind: 'login' })}
+          onPrivacy={() => {
+            setShowPrivacy(true)
+            window.scrollTo(0, 0)
+          }}
+        />
+      )
+    }
     return (
       <AuthScreen
         mode={session.needsSetup && mode.kind === 'login' ? { kind: 'setup' } : mode}
@@ -226,6 +253,7 @@ export default function App() {
   const joined = (result: JoinResult) => {
     setClassScenarios(result.scenarios)
     setClassFlow(result.flow)
+    setProgress({ requirements: result.requirements, passed: result.passed })
     setSession({ state: 'ready', user: { ...user, classInfo: result.classInfo }, needsSetup: false })
   }
 
@@ -248,6 +276,7 @@ export default function App() {
     view.name === 'people' ||
     view.name === 'system' ||
     view.name === 'help' ||
+    view.name === 'privacy' ||
     view.name === 'flows' ||
     view.name === 'mycalls'
       ? view.name
@@ -262,6 +291,9 @@ export default function App() {
           : view.name === 'score' && view.from === 'call'
             ? 'practice'
             : 'trainer'
+
+  // A call left unfinished by a refresh, crash, or leaving the page mid-call.
+  const unfinished = view.name === 'call' ? null : loadActiveCall(user.id)
 
   const NAV = [
     ...(user.role === 'agent'
@@ -346,10 +378,43 @@ export default function App() {
             )}
           </div>
         )}
+        {unfinished && (
+          <div className="resume-banner" role="status">
+            <span>
+              <strong>You have an unfinished call</strong> with {unfinished.scenario.leadName} ({unfinished.scenario.title}
+              ).
+            </span>
+            <button
+              className="primary small-button"
+              onClick={() =>
+                setView({
+                  name: 'call',
+                  scenario: unfinished.scenario,
+                  flow: unfinished.flow,
+                  preview: unfinished.preview ?? undefined,
+                  resume: unfinished,
+                  run: Date.now(),
+                })
+              }
+            >
+              Go back to it
+            </button>
+            <button
+              className="link muted-link"
+              onClick={() => {
+                clearActiveCall()
+                setCallCheck((n) => n + 1)
+              }}
+            >
+              Discard it
+            </button>
+          </div>
+        )}
         {view.name === 'dashboard' && (
           <Dashboard
             user={user}
             flow={classFlow}
+            progress={progress}
             classInfo={user.classInfo}
             classScenarios={classScenarios}
             onJoin={joined}
@@ -371,7 +436,8 @@ export default function App() {
         {view.name === 'account' && <AccountView user={user} />}
         {view.name === 'people' && user.role === 'admin' && <PeopleView user={user} />}
         {view.name === 'system' && user.role === 'admin' && <SystemView />}
-        {view.name === 'help' && <HelpView user={user} />}
+        {view.name === 'help' && <HelpView user={user} onPrivacy={() => setView({ name: 'privacy' })} />}
+        {view.name === 'privacy' && <PrivacyView onBack={() => setView({ name: 'help' })} />}
         {view.name === 'flows' && user.role !== 'agent' && (
           <FlowsView onEdit={(flow, copy) => setView({ name: 'flow-builder', flow, copy })} />
         )}
@@ -389,7 +455,9 @@ export default function App() {
             scenario={view.scenario}
             flow={view.flow}
             agentName={user.name}
-            preview={!!view.preview}
+            userId={user.id}
+            preview={view.preview}
+            resume={view.resume}
             onScored={(attempt, saveNote) =>
               setView({
                 name: 'score',
@@ -408,6 +476,8 @@ export default function App() {
           <ScorecardView
             attempt={view.attempt}
             saveNote={view.saveNote}
+            canReview={view.from === 'trainer'}
+            onReviewed={(attempt) => setView({ ...view, attempt })}
             backLabel={
               view.from === 'call' ? 'Pick another call' : view.from === 'mycalls' ? 'Back to my calls' : 'Back to class'
             }
@@ -445,7 +515,7 @@ export default function App() {
         )}
         {view.name === 'builder' && (
           <ScenarioBuilder
-            classInfo={view.classInfo}
+            flow={view.flow}
             scenario={view.scenario}
             onSaved={(scenario, tryIt) =>
               tryIt ? startCall(scenario, view.classInfo, view.flow) : toTrainer(view.classInfo.id, 'scenarios')
