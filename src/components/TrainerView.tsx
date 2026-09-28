@@ -4,6 +4,7 @@ import type { Scenario } from '../../shared/scenarios.ts'
 import { archiveScenario, createClass, loadDashboard } from '../api.ts'
 import { loadTrainerKey, saveTrainerKey, type Attempt } from '../history.ts'
 import AttemptTables from './AttemptTables.tsx'
+import CallerAvatar from './CallerAvatar.tsx'
 
 interface Props {
   onOpen: (attempt: Attempt) => void
@@ -343,6 +344,10 @@ function ScenariosPanel({
                 <div className="scenario-head">
                   <h3>{s.title}</h3>
                   <span className={`pill difficulty-${s.difficulty.toLowerCase()}`}>{s.difficulty}</span>
+                </div>
+                <div className="caller">
+                  <CallerAvatar name={s.leadName} size="sm" />
+                  <span>{s.leadName}</span>
                 </div>
                 <p>{s.focus}</p>
                 <p className="muted small">
