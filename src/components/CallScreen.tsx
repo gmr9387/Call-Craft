@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { CALL_FLOW, END_MARKERS, type Scenario, type Turn } from '../../shared/scenarios.ts'
+import { END_MARKERS, type Scenario, type Turn } from '../../shared/scenarios.ts'
+import type { CallFlow } from '../../shared/flows.ts'
 import { getProspectReply, scoreCall } from '../api.ts'
 import type { Attempt } from '../history.ts'
 import CallerAvatar from './CallerAvatar.tsx'
@@ -7,6 +8,8 @@ import { canListen, canSpeak, createRecognition, speak, stopSpeaking, type Recog
 
 interface Props {
   scenario: Scenario
+  // The call flow for the call guide (the class's flow, or the built-in sample).
+  flow: CallFlow
   agentName: string
   // Trainer test call: not saved anywhere.
   preview?: boolean
@@ -21,11 +24,11 @@ export interface SaveNote {
   text: string
 }
 
-function stripMarkers(text: string): { text: string; ended: string | null } {
+function stripMarkers(text: string, flow: CallFlow): { text: string; ended: string | null } {
   let ended: string | null = null
   let clean = text
   if (clean.includes(END_MARKERS.hangUp)) ended = 'The prospect hung up.'
-  if (clean.includes(END_MARKERS.transferred)) ended = 'Transferred to the admissions counselor.'
+  if (clean.includes(END_MARKERS.transferred)) ended = `The call reached its goal: ${flow.endGoal}.`
   for (const marker of Object.values(END_MARKERS)) clean = clean.replaceAll(marker, '')
   return { text: clean.trim(), ended }
 }
@@ -34,7 +37,7 @@ function formatTime(sec: number): string {
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
 }
 
-export default function CallScreen({ scenario, agentName, preview = false, onScored, onCancel }: Props) {
+export default function CallScreen({ scenario, flow, agentName, preview = false, onScored, onCancel }: Props) {
   const [transcript, setTranscript] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [waiting, setWaiting] = useState(false)
@@ -110,7 +113,7 @@ export default function CallScreen({ scenario, agentName, preview = false, onSco
     setInput('')
     setWaiting(true)
     try {
-      const reply = stripMarkers(await getProspectReply(scenario.id, next))
+      const reply = stripMarkers(await getProspectReply(scenario.id, next), flow)
       if (reply.text) {
         setTranscript([...next, { speaker: 'prospect', text: reply.text }])
         if (voiceOut) speak(reply.text)
@@ -173,7 +176,7 @@ export default function CallScreen({ scenario, agentName, preview = false, onSco
             <CallerAvatar name={scenario.leadName} size="lg" />
             <div>
               <p className="eyebrow">
-                {preview ? 'Trainer preview' : 'Outbound call'} · {scenario.title}
+                {preview ? 'Trainer preview' : flow.company} · {scenario.title}
               </p>
               <h2>
                 Calling {scenario.leadName}
@@ -250,7 +253,7 @@ export default function CallScreen({ scenario, agentName, preview = false, onSco
               }}
               placeholder={
                 transcript.length === 0
-                  ? `Open the call, e.g. "Hi, this is ${agentName || 'your name'} calling from…"`
+                  ? `Open the call, e.g. "Hi, this is ${agentName || 'your name'} calling from ${flow.company}…"`
                   : 'Say something… (Enter to send, Shift+Enter for a new line)'
               }
               rows={3}
@@ -291,7 +294,7 @@ export default function CallScreen({ scenario, agentName, preview = false, onSco
           <h3>Call guide</h3>
           <p className="muted small">{scenario.focus}</p>
           <ol className="flow-list compact">
-            {CALL_FLOW.map((step) => (
+            {flow.steps.map((step) => (
               <li key={step.id}>
                 <strong>{step.label}</strong>
                 <span>{step.guide}</span>

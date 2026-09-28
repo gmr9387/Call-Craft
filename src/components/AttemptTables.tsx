@@ -1,4 +1,4 @@
-import { CALL_FLOW, SCENARIOS, type Scenario } from '../../shared/scenarios.ts'
+import { SCENARIOS, type Scenario } from '../../shared/scenarios.ts'
 import { attemptTitle, type Attempt } from '../history.ts'
 
 interface Props {
@@ -17,19 +17,19 @@ function average(nums: number[]): number | null {
 
 // The call-flow step an agent misses most often, to show trainers where to coach.
 function mostMissedStep(attempts: Attempt[]): string | null {
+  // Counted by step name, so this works for any call flow.
   const misses = new Map<string, number>()
   for (const a of attempts) {
     for (const step of a.scorecard.steps) {
       if (step.status === 'missed' || step.status === 'out_of_order') {
-        misses.set(step.id, (misses.get(step.id) ?? 0) + 1)
+        misses.set(step.label, (misses.get(step.label) ?? 0) + 1)
       }
     }
   }
   let top: [string, number] | null = null
   for (const entry of misses) if (!top || entry[1] > top[1]) top = entry
   if (!top) return null
-  const label = CALL_FLOW.find((s) => s.id === top[0])?.label ?? top[0]
-  return `${label} (${top[1]}×)`
+  return `${top[0]} (${top[1]}×)`
 }
 
 export default function AttemptTables({ attempts, onOpen, showAgents = false, customScenarios = [] }: Props) {

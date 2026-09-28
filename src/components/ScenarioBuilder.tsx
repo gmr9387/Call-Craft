@@ -36,9 +36,9 @@ function fieldsFrom(s: Scenario): ScenarioFields {
 }
 
 const IDEAS = [
-  'A grandmother who is nervous about going back to school at 60',
-  'A busy dad who keeps saying "just email me the info"',
-  'Someone who thinks online degrees are a scam',
+  'Someone nervous who asks a lot of questions',
+  'A busy parent who keeps saying "just email me the info"',
+  'Someone who thinks this call is a scam',
 ]
 
 export default function ScenarioBuilder({ classInfo, scenario, onSaved, onCancel }: Props) {
@@ -108,7 +108,7 @@ export default function ScenarioBuilder({ classInfo, scenario, onSaved, onCancel
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Example: A college student who is only interested if classes are at night"
+          placeholder="Example: Someone who is only interested if it fits their night schedule"
           rows={2}
           maxLength={1000}
         />
@@ -170,11 +170,11 @@ export default function ScenarioBuilder({ classInfo, scenario, onSaved, onCancel
           </label>
 
           <label className="field">
-            <span>Program they asked about</span>
+            <span>What the call is about for them</span>
             <input
               value={fields.program}
               onChange={(e) => set('program', e.target.value)}
-              placeholder="Example: Bachelor's in Nursing"
+              placeholder="Example: Home internet plan"
               maxLength={120}
             />
           </label>

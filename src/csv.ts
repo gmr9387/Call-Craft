@@ -1,0 +1,74 @@
+import type { ClassDashboard } from '../shared/classes.ts'
+import { attemptTitle } from './history.ts'
+
+type Cell = string | number | null | undefined
+
+// Spreadsheet apps treat cells starting with = + - @ as formulas; prefix those so names
+// and quotes from calls can never run as formulas.
+function cell(value: Cell): string {
+  let text = value === null || value === undefined ? '' : String(value)
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+export function downloadCsv(filename: string, rows: Cell[][]): void {
+  // The byte-order mark makes Excel open the file as UTF-8.
+  const csv = '﻿' + rows.map((r) => r.map(cell).join(',')).join('\r\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+const fileSafe = (name: string) => name.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'class'
+const today = () => new Date().toISOString().slice(0, 10)
+
+const RESULT = { pass: 'Pass', needs_work: 'Needs work', fail: 'Fail' } as const
+
+// Every scored call in the class, one row per call.
+export function downloadResults(dashboard: ClassDashboard): void {
+  const rows: Cell[][] = [
+    ['Date', 'Agent', 'Scenario', 'Score', 'Result', 'Rules broken', 'Missed steps', 'Minutes'],
+    ...dashboard.attempts.map((a) => [
+      new Date(a.startedAt).toLocaleString(),
+      a.agentName,
+      attemptTitle(a),
+      Math.round(a.scorecard.overall_score),
+      RESULT[a.scorecard.result],
+      a.scorecard.compliance
+        .filter((c) => c.status === 'violation')
+        .map((c) => c.rule)
+        .join('; '),
+      a.scorecard.steps
+        .filter((s) => s.status === 'missed' || s.status === 'out_of_order')
+        .map((s) => s.label)
+        .join('; '),
+      (a.durationSec / 60).toFixed(1),
+    ]),
+  ]
+  downloadCsv(`${fileSafe(dashboard.classInfo.name)}-results-${today()}.csv`, rows)
+}
+
+// One row per agent: how much they've practiced and how they're doing.
+export function downloadRoster(dashboard: ClassDashboard): void {
+  const rows: Cell[][] = [
+    ['Agent', 'Email', 'Calls', 'Average score', 'Calls passed', 'Last active'],
+    ...dashboard.agents.map((agent) => {
+      const calls = dashboard.attempts.filter((a) => a.userId === agent.id)
+      const avg = calls.length
+        ? Math.round(calls.reduce((n, a) => n + a.scorecard.overall_score, 0) / calls.length)
+        : null
+      return [
+        agent.name,
+        agent.email,
+        calls.length,
+        avg,
+        calls.filter((a) => a.scorecard.result === 'pass').length,
+        agent.lastSeenAt ? new Date(agent.lastSeenAt).toLocaleDateString() : '',
+      ]
+    }),
+  ]
+  downloadCsv(`${fileSafe(dashboard.classInfo.name)}-agents-${today()}.csv`, rows)
+}

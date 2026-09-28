@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ROLE_LABEL, type Me, type Person, type Role } from '../../shared/accounts.ts'
 import { inviteLink, listPeople, resetLink, setDisabled } from '../api.ts'
 import { LinkNotice } from './CopyLink.tsx'
+import EditPerson from './EditPerson.tsx'
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : 'Never')
 
@@ -11,6 +12,7 @@ export default function PeopleView({ user }: { user: Me }) {
   const [filter, setFilter] = useState<Role | 'all'>('all')
   const [notice, setNotice] = useState<{ title: string; text: string; link: string } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -97,6 +99,9 @@ export default function PeopleView({ user }: { user: Me }) {
         </div>
       </div>
 
+      {people?.length === 1 && !notice && (
+        <p className="notice">Next step: invite your first trainer. Click "Invite a trainer" and send them the link.</p>
+      )}
       {notice && <LinkNotice {...notice} onClose={() => setNotice(null)} />}
       {error && (
         <p className="error" role="alert">
@@ -135,7 +140,20 @@ export default function PeopleView({ user }: { user: Me }) {
                 </tr>
               </thead>
               <tbody>
-                {shown.map((p) => (
+                {shown.map((p) =>
+                  editing === p.id ? (
+                    <tr key={p.id}>
+                      <td colSpan={6}>
+                        <EditPerson
+                          person={p}
+                          onDone={(changed) => {
+                            setEditing(null)
+                            if (changed) void load()
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ) : (
                   <tr key={p.id} className={p.disabled ? 'is-off' : ''}>
                     <td>
                       <strong>{p.name}</strong>
@@ -149,6 +167,9 @@ export default function PeopleView({ user }: { user: Me }) {
                     <td>
                       {p.id !== user.id && (
                         <div className="row-actions">
+                          <button className="link" disabled={busy === p.id} onClick={() => setEditing(p.id)}>
+                            Edit
+                          </button>
                           <button className="secondary small-button" disabled={busy === p.id} onClick={() => void reset(p)}>
                             Reset password
                           </button>
@@ -159,7 +180,8 @@ export default function PeopleView({ user }: { user: Me }) {
                       )}
                     </td>
                   </tr>
-                ))}
+                  ),
+                )}
               </tbody>
             </table>
           </div>

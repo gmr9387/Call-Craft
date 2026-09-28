@@ -1,12 +1,14 @@
 import type { ClassInfo, JoinResult } from '../../shared/classes.ts'
 import { SCENARIOS, type Scenario } from '../../shared/scenarios.ts'
 import type { Me } from '../../shared/accounts.ts'
+import type { CallFlow } from '../../shared/flows.ts'
 import { attemptTitle, type Attempt } from '../history.ts'
 import { ClassJoin } from './Home.tsx'
 import { useMyCalls } from '../useMyCalls.ts'
 
 interface Props {
   user: Me
+  flow: CallFlow
   classInfo: ClassInfo | null
   classScenarios: Scenario[]
   onJoin: (result: JoinResult) => void
@@ -19,13 +21,14 @@ interface Props {
 const RESULT_LABEL = { pass: '✓ Pass', needs_work: '! Needs work', fail: '✕ Fail' } as const
 
 // The first call the agent hasn't passed yet, trainer-made calls first.
-function nextUp(scenarios: Scenario[], attempts: Attempt[]): Scenario {
+function nextUp(scenarios: Scenario[], attempts: Attempt[]): Scenario | undefined {
   const passed = new Set(attempts.filter((a) => a.scorecard.result === 'pass').map((a) => a.scenarioId))
   return scenarios.find((s) => !passed.has(s.id)) ?? scenarios[0]
 }
 
 export default function Dashboard({
   user,
+  flow,
   classInfo,
   classScenarios,
   onJoin,
@@ -37,7 +40,8 @@ export default function Dashboard({
   const firstName = user.name.split(' ')[0]
   const { attempts: loaded, error } = useMyCalls()
   const attempts = loaded ?? []
-  const next = nextUp([...classScenarios, ...SCENARIOS], attempts)
+  // Sample calls only fit the sample call flow.
+  const next = nextUp(flow.builtIn ? [...classScenarios, ...SCENARIOS] : classScenarios, attempts)
   const recent = attempts.slice(0, 5)
   const passes = attempts.filter((a) => a.scorecard.result === 'pass').length
   const average = attempts.length
@@ -56,16 +60,25 @@ export default function Dashboard({
           <img className="next-photo" src="/photos/agent-desk.webp" alt="" width={800} height={1200} />
           <div className="next-body">
             <p className="eyebrow">Next up</p>
-            <h2>{next.title}</h2>
-            <p>{next.focus}</p>
-            <div className="card-actions">
-              <button className="primary big" onClick={() => onStart(next)}>
-                Start this call
-              </button>
-              <button className="secondary big" onClick={onPractice}>
-                Pick a different call
-              </button>
-            </div>
+            {next ? (
+              <>
+                <h2>{next.title}</h2>
+                <p>{next.focus}</p>
+                <div className="card-actions">
+                  <button className="primary big" onClick={() => onStart(next)}>
+                    Start this call
+                  </button>
+                  <button className="secondary big" onClick={onPractice}>
+                    Pick a different call
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2>No practice calls yet</h2>
+                <p>Your trainer is still setting up practice calls for {classInfo?.name ?? 'your class'}. Check back soon.</p>
+              </>
+            )}
           </div>
         </section>
 

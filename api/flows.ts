@@ -3,7 +3,7 @@ import { draftFlow } from "../server/coach.js";
 import { createFlow, listFlows, setFlowArchived, updateFlow } from "../server/flows.js";
 import { checkUsage } from "../server/limits.js";
 import { cleanId, cleanText, errorResponse, json, readJson } from "../server/http.js";
-import { FlowInput } from "../shared/flows.js";
+import { FlowInput } from "../shared/flowInput.js";
 
 const NOT_FOUND = "That call flow wasn't found.";
 

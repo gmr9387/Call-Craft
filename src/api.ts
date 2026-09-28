@@ -1,5 +1,6 @@
 import type { AuthStatus, LinkInfo, Me, Person } from '../shared/accounts.ts'
 import type { ClassDashboard, ClassInfo, ClassSummary, JoinResult, SavedAttempt } from '../shared/classes.ts'
+import type { CallFlow, FlowInputValue, FlowSummary } from '../shared/flows.ts'
 import type { ScenarioInputValue } from '../shared/scenarioInput.ts'
 import type { Scenario, Turn } from '../shared/scenarios.ts'
 import type { ScorecardResult } from '../shared/scorecard.ts'
@@ -70,6 +71,54 @@ export async function resetLink(userId: string): Promise<string> {
 export const setDisabled = (userId: string, disabled: boolean) =>
   post('/api/people', { action: 'disable', userId, disabled })
 
+export const updatePerson = (userId: string, name: string, email: string) =>
+  post('/api/people', { action: 'update', userId, name, email })
+
+// ---- Call flows ----
+
+export async function listFlows(): Promise<FlowSummary[]> {
+  return (await post<{ flows: FlowSummary[] }>('/api/flows', { action: 'list' })).flows
+}
+
+export async function draftFlow(description: string): Promise<FlowInputValue> {
+  return (await post<{ draft: FlowInputValue }>('/api/flows', { action: 'draft', description })).draft
+}
+
+export async function saveFlow(flow: FlowInputValue, id?: string): Promise<CallFlow> {
+  return (await post<{ flow: CallFlow }>('/api/flows', { action: id ? 'update' : 'create', id, flow })).flow
+}
+
+export const archiveFlow = (id: string, archived: boolean) => post('/api/flows', { action: 'archive', id, archived })
+
+// ---- System (admins) ----
+
+export interface SpendingLimits {
+  dailyTotal: number
+  perClientHourly: number
+  draftsPerClassDaily: number
+}
+
+export interface SystemStatus {
+  usage: {
+    today: { reply: number; score: number; draft: number; health: number }
+    lastHour: number
+    week: { day: string; count: number }[]
+  }
+  limits: SpendingLimits
+  aiProblem: { message: string; at: string } | null
+  models: { replies: string; scoring: string }
+  counts: { agents: number; staff: number; classes: number; callsToday: number; activeThisWeek: number }
+}
+
+export interface Check {
+  ok: boolean
+  detail: string
+}
+
+export const systemStatus = () => post<SystemStatus>('/api/admin', { action: 'status' })
+export const saveLimits = (limits: SpendingLimits) => post('/api/admin', { action: 'limits', ...limits })
+export const checkSystem = () => post<{ ai: Check; database: Check }>('/api/admin', { action: 'check-ai' })
+
 // ---- Practice calls ----
 
 export async function getProspectReply(scenarioId: string, transcript: Turn[]): Promise<string> {
@@ -107,9 +156,18 @@ export async function listClasses(): Promise<ClassSummary[]> {
   return (await post<{ classes: ClassSummary[] }>('/api/classes', { action: 'list' })).classes
 }
 
-export async function createClass(name: string): Promise<ClassInfo> {
-  return (await post<{ classInfo: ClassInfo }>('/api/classes', { action: 'create', name })).classInfo
+export async function createClass(name: string, flowId: string): Promise<ClassInfo> {
+  return (await post<{ classInfo: ClassInfo }>('/api/classes', { action: 'create', name, flowId })).classInfo
 }
+
+export const updateClass = (classId: string, changes: { name?: string; flowId?: string; archived?: boolean }) =>
+  post('/api/classes', { action: 'update', classId, ...changes })
+
+export const reassignClass = (classId: string, trainerId: string) =>
+  post('/api/classes', { action: 'reassign', classId, trainerId })
+
+export const moveAgent = (classId: string, userId: string, toClassId: string) =>
+  post('/api/classes', { action: 'move-agent', classId, userId, toClassId })
 
 export const loadDashboard = (classId: string) => post<ClassDashboard>('/api/classes', { action: 'dashboard', classId })
 

@@ -5,7 +5,8 @@ import { clearAiProblem, getSettings, noteAiProblem } from "./settings.js";
 import { END_MARKERS, type Scenario, type Turn } from "../shared/scenarios.js";
 import { Scorecard, type ScorecardResult } from "../shared/scorecard.js";
 import { ScenarioDraft, type ScenarioInputValue } from "../shared/scenarioInput.js";
-import { FlowDraft, MAX_RULES, MAX_STEPS, type CallFlow, type FlowInputValue } from "../shared/flows.js";
+import { MAX_RULES, MAX_STEPS, type CallFlow, type FlowInputValue } from "../shared/flows.js";
+import { FlowDraft } from "../shared/flowInput.js";
 
 // Claude Haiku 4.5 is the lowest-cost current model. Override per deployment with
 // CALLCRAFT_MODEL (the prospect's replies) and CALLCRAFT_SCORING_MODEL (scoring and

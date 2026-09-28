@@ -2,11 +2,14 @@
 
 AI mock-call trainer for contact center agents. Agents run realistic practice calls with an AI prospect, then get a scorecard covering the call flow, compliance, and soft skills, with specific coaching tips.
 
-The first version covers a generic outbound higher-ed inquiry call for a fictional school, **Lakeview State University**. All scenarios, names, and wording are made up; no client scripts or proprietary training material are used.
+It's built so a small team can run it for many agents without a developer. Trainers set up any kind of call on screen (the steps, the rules, and the practice callers), and admins manage people, classes, and AI spending in the app.
+
+CallCraft ships with one sample call flow: a generic outbound inquiry call for a fictional school, **Lakeview State University**. All sample scenarios, names, and wording are made up; no client scripts or proprietary training material are used.
 
 ## What's in it
 
-- **Six practice scenarios** on the same call flow, each with a different prospect:
+- **Call flows** (trainers and admins): a call flow is what agents are scored on: the company they call for, what the call is for, how a good call ends, the steps in order, and rules they must never break. Describe a call in a few sentences and click **Write it for me**, or build one by hand. Each class uses one call flow; replies, scoring, scenario drafts, and the agent's call guide all follow it. Flows can be copied, edited, and archived.
+- **Six sample scenarios** on the sample call flow, each with a different prospect:
   - Ready to talk (easy)
   - Someone else picks up
   - "I never asked for this"
@@ -35,7 +38,15 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
     - **All calls:** each call, with its full scorecard and transcript
 - **Scenario builder** (trainers): describe a caller in one sentence and click **Write it for me**. The AI fills in the scenario: name, difficulty, what to practice, who the caller is and how they act, and what the agent must do to pass. The trainer edits anything, saves, and can **Try it** right away; trial calls aren't saved. Agents in the class see these scenarios under **From your trainer**. Trainers can hide a scenario from agents at any time.
 - **Marketing page and sign-in**: the site opens on a simple marketing page with a **Sign in** button.
-- **Left menu by role**: agents see Dashboard, Practice, My calls. Trainers see Classes, Practice, My calls. Admins also see People. Everyone has Account (change password) and Sign out.
+- **Class tools** (trainers and admins), on each class's tabs:
+  - **Results**: scores by agent, by scenario, and every call, plus **Download results** as a spreadsheet (CSV that opens in Excel or Google Sheets).
+  - **Agents**: roster with calls, average score, last active; **Edit** name/email, **Reset password**, **Move to** another class, **Remove**; download the list.
+  - **Scenarios**: build, edit, try, and hide practice calls.
+  - **Settings**: rename, change the call flow, archive (the code stops working; results are kept) or bring back, and for admins, hand the class to another trainer.
+- **People** (admins): invite trainers and admins, edit names and emails, reset passwords, turn accounts off.
+- **System** (admins): AI requests today and for the last 7 days, how many people and classes are active, a one-click health check, and the **spending limits**, changed in the app. If the AI stops working (bad key, no credit), trainers and admins see a red banner on every page, and the System page says what's wrong.
+- **Help**: short answers for each role, and a getting-started guide for new trainers.
+- **Left menu by role**: agents see Dashboard, Practice, My calls. Trainers see Classes, Call flows, Practice, My calls. Admins also see People and System. Everyone has Help, Account (change password), and Sign out.
 - **Agent dashboard**: the next call to practice, your class, three numbers (calls, average score, calls passed), and your recent calls.
 - **Desktop only**: the app itself needs a window at least 900px wide, like an agent's real workstation. On phones it asks the person to use a computer. The marketing page works on any screen.
 - **Light theme everywhere**, regardless of the computer's dark mode setting.
@@ -50,15 +61,20 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
 | `shared/scenarioInput.ts` | Scenario builder fields and validation (Zod) |
 | `server/coach.ts` | Claude calls: the prospect's next line (low effort, for fast replies) and the structured scorecard (high effort) |
 | `shared/accounts.ts` | Roles and account types |
+| `shared/flows.ts`, `shared/flowInput.ts` | Call flow types, the sample flow, and validation |
+| `server/flows.ts` | Call flow storage |
+| `server/settings.ts` | In-app settings (spending limits) and the last AI problem |
 | `server/auth.ts` | Passwords (scrypt), sessions (httpOnly cookie), invite and reset links, access checks |
 | `server/db.ts` | Postgres access: classes, saved calls, dashboards, scenarios |
 | `server/limits.ts` | Spending limits on AI requests |
 | `api/auth.ts` | `GET /api/auth` (who is signed in); `POST`: `login`, `logout`, `setup`, `signup`, `link`, `accept`, `reset`, `password` |
-| `api/people.ts` | `POST /api/people`: `list`, `invite`, `reset-link`, `disable` |
+| `api/people.ts` | `POST /api/people`: `list`, `invite`, `reset-link`, `update`, `disable` |
 | `api/calls.ts` | `GET /api/calls`: your scored calls |
 | `api/coach.ts` | `POST /api/coach` (signed in): `action: "reply" \| "score"`; `score` saves the call to you and your class |
-| `api/classes.ts` | `POST /api/classes`: `list`, `create`, `dashboard`, `remove-agent`, `mine`, `join` |
+| `api/classes.ts` | `POST /api/classes`: `list`, `create`, `dashboard`, `update`, `reassign`, `remove-agent`, `move-agent`, `mine`, `join` |
 | `api/health.ts` | `GET /api/health`: is the AI key working, is the database connected |
+| `api/flows.ts` | `POST /api/flows` (trainers and admins): `list`, `draft`, `create`, `update`, `archive` |
+| `api/admin.ts` | `POST /api/admin` (admins): `status`, `limits`, `check-ai` |
 | `api/scenarios.ts` | `POST /api/scenarios` (trainers and admins of the class): `action: "draft" \| "create" \| "update" \| "archive"` |
 | `db/schema.sql` | Database schema (safe to re-run) |
 | `src/` | React UI |
@@ -82,7 +98,7 @@ Every AI request (a caller reply, a score, a scenario draft, a health check) is 
 | `CALLCRAFT_DAILY_DRAFT_LIMIT` | 25 | "Write it for me" drafts per class per day |
 | `CALLCRAFT_HOURLY_HEALTH_LIMIT` | 10 | `/api/health` AI checks per hour from one computer |
 
-A practice call is usually 10–20 requests, so the default daily limit covers roughly 75–150 calls. Raise it in Vercel as more agents start. Counts are kept in the `ai_usage` table (computers are stored only as a salted hash; set `CALLCRAFT_USAGE_SALT` to any random text). Without a database, counts are kept in memory instead. AI requests also time out after 60 seconds and retry once.
+A practice call is usually 10–20 requests, so the default daily limit covers roughly 75–150 calls. **Admins change the first three limits on the System page**; a value saved there wins over the environment variable, which wins over the default. Counts are kept in the `ai_usage` table (computers are stored only as a salted hash; set `CALLCRAFT_USAGE_SALT` to any random text). Without a database, counts are kept in memory instead. AI requests also time out after 60 seconds and retry once.
 
 ## Database
 
@@ -142,8 +158,7 @@ GitHub Actions runs lint, build, and all tests (with a Postgres service) on ever
 
 ## Next steps
 
-- Call flows built in the app, so trainers can set up any program's steps and rules without code.
-- An admin page for AI usage, limits, and system health.
-- Download class results as a spreadsheet.
-- Built-in help and a first-time walkthrough for trainers.
 - Real-time voice calls instead of browser speech.
+- Company sign-in (single sign-on) if a client's IT asks for it.
+- Trainer score overrides and notes on a call.
+- Privacy policy, data retention settings, and deleting a person's data on request.

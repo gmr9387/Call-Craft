@@ -1,11 +1,14 @@
 import { useState, type FormEvent } from 'react'
 import type { ClassInfo, JoinResult } from '../../shared/classes.ts'
-import { CALL_FLOW, SCENARIOS, SCHOOL_NAME, type Scenario } from '../../shared/scenarios.ts'
+import { SCENARIOS, type Scenario } from '../../shared/scenarios.ts'
+import type { CallFlow } from '../../shared/flows.ts'
 import { joinClass } from '../api.ts'
 import CallerAvatar from './CallerAvatar.tsx'
 
 interface Props {
   classInfo: ClassInfo | null
+  // The class's call flow (the built-in sample when not in a class).
+  flow: CallFlow
   classScenarios: Scenario[]
   onStart: (scenario: Scenario) => void
 }
@@ -111,7 +114,7 @@ export function ScenarioGrid({
   )
 }
 
-export default function Home({ classInfo, classScenarios, onStart }: Props) {
+export default function Home({ classInfo, flow, classScenarios, onStart }: Props) {
   return (
     <div className="home">
       <section className="page-head">
@@ -127,24 +130,40 @@ export default function Home({ classInfo, classScenarios, onStart }: Props) {
         </section>
       )}
 
-      <section>
-        <h2>{classScenarios.length > 0 ? 'More practice calls' : 'Practice calls'}</h2>
-        <p className="muted">
-          You'll call someone who asked about {SCHOOL_NAME} (a made-up school). Each call has a different kind of
-          person on the other end.
-        </p>
-        <ScenarioGrid scenarios={SCENARIOS} onStart={onStart} />
-      </section>
+      {flow.builtIn ? (
+        <section>
+          <h2>{classScenarios.length > 0 ? 'More practice calls' : 'Practice calls'}</h2>
+          <p className="muted">
+            Sample calls: you'll call someone who asked about {flow.company} (a made-up school). Each call has a
+            different kind of person on the other end.
+          </p>
+          <ScenarioGrid scenarios={SCENARIOS} onStart={onStart} />
+        </section>
+      ) : (
+        classScenarios.length === 0 && (
+          <p className="card empty">Your trainer hasn't added practice calls yet. Check back soon.</p>
+        )
+      )}
 
       <details className="card flow-card">
-        <summary>The steps of every call</summary>
+        <summary>The steps of every call ({flow.company})</summary>
         <ol className="flow-list">
-          {CALL_FLOW.map((step) => (
+          {flow.steps.map((step) => (
             <li key={step.id}>
               <strong>{step.label}.</strong> {step.guide}
             </li>
           ))}
         </ol>
+        {flow.rules.length > 0 && (
+          <>
+            <h3>Never break these rules</h3>
+            <ul className="flow-list">
+              {flow.rules.map((rule) => (
+                <li key={rule}>{rule}</li>
+              ))}
+            </ul>
+          </>
+        )}
       </details>
     </div>
   )
