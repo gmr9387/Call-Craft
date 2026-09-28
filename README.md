@@ -41,11 +41,15 @@ CallCraft ships with one sample call flow: a generic outbound inquiry call for a
 - **Class tools** (trainers and admins), on each class's tabs:
   - **Results**: scores by agent, by scenario, and every call, plus **Download results** as a spreadsheet (CSV that opens in Excel or Google Sheets).
   - **Agents**: roster with calls, average score, last active; **Edit** name/email, **Reset password**, **Move to** another class, **Remove**; download the list.
-  - **Scenarios**: build, edit, try, and hide practice calls.
+  - **Scenarios**: build, edit, try, and hide practice calls. Scenarios belong to the call flow, so every class on that flow (including next month's class) gets them automatically.
+  - **Ready for live calls**: on Settings, pick the practice calls every agent must pass and a passing score. The Agents tab shows who is **Ready** (and how far along everyone else is), the agent list download includes it, and each agent sees a checklist on their dashboard.
   - **Settings**: rename, change the call flow, archive (the code stops working; results are kept) or bring back, and for admins, hand the class to another trainer.
-- **People** (admins): invite trainers and admins, edit names and emails, reset passwords, turn accounts off.
-- **System** (admins): AI requests today and for the last 7 days, how many people and classes are active, a one-click health check, and the **spending limits**, changed in the app. If the AI stops working (bad key, no credit), trainers and admins see a red banner on every page, and the System page says what's wrong.
+- **Trainer reviews**: on any call in their class, a trainer writes a note for the agent and can correct the score and result. The agent sees the note on that call; corrected scores count for "Ready" and show everywhere scores do (the AI's score is kept and shown alongside).
+- **Unfinished calls come back**: the call in progress is kept in the browser as it goes. After a refresh, crash, or leaving mid-call, a banner offers to go back to it.
+- **People** (admins): invite trainers and admins, edit names and emails, reset passwords, turn accounts off, and **delete** a person with all their practice calls (confirmed by typing their email).
+- **System** (admins): AI requests today and for the last 7 days, how many people and classes are active, a one-click health check, the **spending limits**, how long **practice calls are kept** (30+ days, or forever; older calls are deleted automatically), and the **activity log** of who invited, reset, changed, or deleted what (downloadable). If the AI stops working (bad key, no credit), trainers and admins see a red banner on every page, and the System page says what's wrong.
 - **Help**: short answers for each role, and a getting-started guide for new trainers.
+- **Privacy and terms**: a plain-language page (linked from the marketing page and Help) on what's kept, who sees it, how it's processed, and how to have it deleted. The call screen reminds agents never to type real customer information. Have your own counsel review this page before real use.
 - **Left menu by role**: agents see Dashboard, Practice, My calls. Trainers see Classes, Call flows, Practice, My calls. Admins also see People and System. Everyone has Help, Account (change password), and Sign out.
 - **Agent dashboard**: the next call to practice, your class, three numbers (calls, average score, calls passed), and your recent calls.
 - **Desktop only**: the app itself needs a window at least 900px wide, like an agent's real workstation. On phones it asks the person to use a computer. The marketing page works on any screen.
@@ -63,19 +67,20 @@ CallCraft ships with one sample call flow: a generic outbound inquiry call for a
 | `shared/accounts.ts` | Roles and account types |
 | `shared/flows.ts`, `shared/flowInput.ts` | Call flow types, the sample flow, and validation |
 | `server/flows.ts` | Call flow storage |
-| `server/settings.ts` | In-app settings (spending limits) and the last AI problem |
+| `server/settings.ts` | In-app settings (spending limits, data retention) and the last AI problem |
+| `server/audit.ts` | Activity log |
 | `server/auth.ts` | Passwords (scrypt), sessions (httpOnly cookie), invite and reset links, access checks |
 | `server/db.ts` | Postgres access: classes, saved calls, dashboards, scenarios |
 | `server/limits.ts` | Spending limits on AI requests |
 | `api/auth.ts` | `GET /api/auth` (who is signed in); `POST`: `login`, `logout`, `setup`, `signup`, `link`, `accept`, `reset`, `password` |
-| `api/people.ts` | `POST /api/people`: `list`, `invite`, `reset-link`, `update`, `disable` |
+| `api/people.ts` | `POST /api/people`: `list`, `invite`, `reset-link`, `update`, `disable`, `delete` |
 | `api/calls.ts` | `GET /api/calls`: your scored calls |
 | `api/coach.ts` | `POST /api/coach` (signed in): `action: "reply" \| "score"`; `score` saves the call to you and your class |
-| `api/classes.ts` | `POST /api/classes`: `list`, `create`, `dashboard`, `update`, `reassign`, `remove-agent`, `move-agent`, `mine`, `join` |
+| `api/classes.ts` | `POST /api/classes`: `list`, `create`, `dashboard`, `update`, `reassign`, `remove-agent`, `move-agent`, `review`, `mine`, `join` |
 | `api/health.ts` | `GET /api/health`: is the AI key working, is the database connected |
 | `api/flows.ts` | `POST /api/flows` (trainers and admins): `list`, `draft`, `create`, `update`, `archive` |
-| `api/admin.ts` | `POST /api/admin` (admins): `status`, `limits`, `check-ai` |
-| `api/scenarios.ts` | `POST /api/scenarios` (trainers and admins of the class): `action: "draft" \| "create" \| "update" \| "archive"` |
+| `api/admin.ts` | `POST /api/admin` (admins): `status`, `limits`, `check-ai`, `retention` |
+| `api/scenarios.ts` | `POST /api/scenarios` (trainers and admins; by call flow): `action: "draft" \| "create" \| "update" \| "archive"` |
 | `db/schema.sql` | Database schema (safe to re-run) |
 | `src/` | React UI |
 
@@ -95,7 +100,7 @@ Every AI request (a caller reply, a score, a scenario draft, a health check) is 
 |---|---|---|
 | `CALLCRAFT_DAILY_AI_LIMIT` | 1500 | AI requests per day, whole site |
 | `CALLCRAFT_HOURLY_CLIENT_LIMIT` | 120 | AI requests per hour from one person (a whole training room behind one office IP address doesn't share a limit) |
-| `CALLCRAFT_DAILY_DRAFT_LIMIT` | 25 | "Write it for me" drafts per class per day |
+| `CALLCRAFT_DAILY_DRAFT_LIMIT` | 25 | "Write it for me" scenario drafts per call flow per day |
 | `CALLCRAFT_HOURLY_HEALTH_LIMIT` | 10 | `/api/health` AI checks per hour from one computer |
 
 A practice call is usually 10–20 requests, so the default daily limit covers roughly 75–150 calls. **Admins change the first three limits on the System page**; a value saved there wins over the environment variable, which wins over the default. Counts are kept in the `ai_usage` table (computers are stored only as a salted hash; set `CALLCRAFT_USAGE_SALT` to any random text). Without a database, counts are kept in memory instead. AI requests also time out after 60 seconds and retry once.
@@ -160,5 +165,3 @@ GitHub Actions runs lint, build, and all tests (with a Postgres service) on ever
 
 - Real-time voice calls instead of browser speech.
 - Company sign-in (single sign-on) if a client's IT asks for it.
-- Trainer score overrides and notes on a call.
-- Privacy policy, data retention settings, and deleting a person's data on request.

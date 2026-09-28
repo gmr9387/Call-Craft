@@ -1,5 +1,5 @@
 import { SCENARIOS, type Scenario } from '../../shared/scenarios.ts'
-import { attemptTitle, type Attempt } from '../history.ts'
+import { attemptTitle, resultOf, scoreOf, type Attempt } from '../history.ts'
 
 interface Props {
   attempts: Attempt[]
@@ -40,8 +40,8 @@ export default function AttemptTables({ attempts, onOpen, showAgents = false, cu
     return {
       name,
       runs: runs.length,
-      avg: average(runs.map((a) => a.scorecard.overall_score)),
-      passes: runs.filter((a) => a.scorecard.result === 'pass').length,
+      avg: average(runs.map((a) => scoreOf(a))),
+      passes: runs.filter((a) => resultOf(a) === 'pass').length,
       violations: runs.filter((a) => a.scorecard.compliance.some((c) => c.status === 'violation')).length,
       missed: mostMissedStep(runs),
       last: runs.reduce((latest, a) => (a.startedAt > latest ? a.startedAt : latest), runs[0].startedAt),
@@ -59,8 +59,8 @@ export default function AttemptTables({ attempts, onOpen, showAgents = false, cu
       id,
       title,
       runs: runs.length,
-      avg: average(runs.map((a) => a.scorecard.overall_score)),
-      passes: runs.filter((a) => a.scorecard.result === 'pass').length,
+      avg: average(runs.map((a) => scoreOf(a))),
+      passes: runs.filter((a) => resultOf(a) === 'pass').length,
     }
   })
 
@@ -145,9 +145,17 @@ export default function AttemptTables({ attempts, onOpen, showAgents = false, cu
                 <td>{new Date(a.startedAt).toLocaleString()}</td>
                 <td>{a.agentName}</td>
                 <td>{attemptTitle(a)}</td>
-                <td className="num">{Math.round(a.scorecard.overall_score)}</td>
+                <td className="num">
+                  {scoreOf(a)}
+                  {a.review && (
+                    <span className="reviewed-mark" title={`Reviewed by ${a.review.by ?? 'a trainer'}`}>
+                      {' '}
+                      ✎
+                    </span>
+                  )}
+                </td>
                 <td>
-                  <span className={`status status-${a.scorecard.result}`}>{RESULT_LABEL[a.scorecard.result]}</span>
+                  <span className={`status status-${resultOf(a)}`}>{RESULT_LABEL[resultOf(a)]}</span>
                 </td>
                 <td>
                   <button className="link" onClick={() => onOpen(a)}>

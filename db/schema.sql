@@ -202,3 +202,22 @@ create table if not exists audit_log (
 
 create index if not exists audit_log_at_idx on audit_log (at desc);
 alter table audit_log enable row level security;
+
+-- ---- Indexes for lookups by foreign key ----
+create index if not exists classes_flow_idx on classes (flow_id);
+create index if not exists account_links_user_idx on account_links (user_id);
+create index if not exists account_links_created_by_idx on account_links (created_by);
+create index if not exists audit_log_actor_idx on audit_log (actor_id);
+create index if not exists call_flows_created_by_idx on call_flows (created_by);
+
+-- On Supabase, the helper that turns on row-level security for new tables shouldn't be callable
+-- through the public API. (It still runs automatically.) Skipped on other Postgres hosts.
+do $$
+begin
+  if exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'rls_auto_enable'
+  ) then
+    revoke execute on function public.rls_auto_enable() from public, anon, authenticated;
+  end if;
+end $$;

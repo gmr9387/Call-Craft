@@ -35,7 +35,11 @@ const SECTIONS: Section[] = [
           'The scorecard shows each step of the call, the rules, your people skills, and tips for next time.',
         ],
       },
-      { q: 'Where are my old calls?', a: ['Open "My calls". Every call you scored is there, on any computer.'] },
+      { q: 'Where are my old calls?', a: ['Open "My calls". Every call you scored is there, on any computer. If your trainer left a note, it shows on the call.'] },
+      {
+        q: 'My computer froze or the page reloaded in the middle of a call.',
+        a: ['Open CallCraft again on the same computer. A banner at the top offers to take you back to the call where you left off.'],
+      },
       {
         q: 'I forgot my password.',
         a: ['Ask your trainer. They can make you a reset link that lets you pick a new password.'],
@@ -77,6 +81,23 @@ const SECTIONS: Section[] = [
         a: ['Yes. On the Scenarios tab, click "Try it". Trainer test calls are never saved or scored for the class.'],
       },
       {
+        q: 'How do I know when an agent is ready for live calls?',
+        a: [
+          'Open the class, then Settings, then "Ready for live calls". Tick the practice calls every agent must pass and set the passing score.',
+          'The Agents tab then shows who is Ready and how far along everyone else is. Agents see their own checklist on their Dashboard.',
+        ],
+      },
+      {
+        q: 'The AI scored a call wrong, or I want to leave feedback.',
+        a: [
+          'Open the call from the Results tab. Under "Your review", write a note and, if needed, a corrected score and result. The agent sees your note on that call, and corrected scores count for "Ready".',
+        ],
+      },
+      {
+        q: 'Do I have to rebuild scenarios for every new class?',
+        a: ['No. Scenarios belong to the call flow, so every class on that call flow gets them automatically.'],
+      },
+      {
         q: 'The class is finished.',
         a: ['Open the class, then Settings, then "Archive class". The code stops working, and results are kept.'],
       },
@@ -111,6 +132,17 @@ const SECTIONS: Section[] = [
         ],
       },
       {
+        q: 'Someone asked us to delete their data.',
+        a: [
+          'On People, click "Delete" next to their name and type their email to confirm. Their account and every practice call they made are deleted for good.',
+          'On System, you can also choose how long practice calls are kept. Older calls are deleted automatically.',
+        ],
+      },
+      {
+        q: 'Who changed this?',
+        a: ['On System, the Activity section lists invites, password resets, and changes to people, classes, and call flows, with who did it and when.'],
+      },
+      {
         q: 'How do I control the AI bill?',
         a: [
           'On System, change the spending limits. The daily limit is the main cap. Set it to 0 to pause all practice.',
@@ -121,7 +153,7 @@ const SECTIONS: Section[] = [
   },
 ]
 
-export default function HelpView({ user }: { user: Me }) {
+export default function HelpView({ user, onPrivacy }: { user: Me; onPrivacy: () => void }) {
   const sections = SECTIONS.filter((s) => s.roles.includes(user.role))
   return (
     <div className="history help">
@@ -142,6 +174,12 @@ export default function HelpView({ user }: { user: Me }) {
           ))}
         </section>
       ))}
+      <p className="muted small">
+        What CallCraft keeps and who can see it:{' '}
+        <button className="link small" onClick={onPrivacy}>
+          Privacy and terms
+        </button>
+      </p>
     </div>
   )
 }

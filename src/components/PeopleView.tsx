@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ROLE_LABEL, type Me, type Person, type Role } from '../../shared/accounts.ts'
-import { inviteLink, listPeople, resetLink, setDisabled } from '../api.ts'
+import { deletePerson, inviteLink, listPeople, resetLink, setDisabled } from '../api.ts'
 import { LinkNotice } from './CopyLink.tsx'
 import EditPerson from './EditPerson.tsx'
 
@@ -13,6 +13,9 @@ export default function PeopleView({ user }: { user: Me }) {
   const [notice, setNotice] = useState<{ title: string; text: string; link: string } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [confirmEmail, setConfirmEmail] = useState('')
+  const [done, setDone] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -103,6 +106,11 @@ export default function PeopleView({ user }: { user: Me }) {
         <p className="notice">Next step: invite your first trainer. Click "Invite a trainer" and send them the link.</p>
       )}
       {notice && <LinkNotice {...notice} onClose={() => setNotice(null)} />}
+      {done && (
+        <p className="notice" role="status">
+          {done}
+        </p>
+      )}
       {error && (
         <p className="error" role="alert">
           {error}
@@ -141,7 +149,53 @@ export default function PeopleView({ user }: { user: Me }) {
               </thead>
               <tbody>
                 {shown.map((p) =>
-                  editing === p.id ? (
+                  deleting === p.id ? (
+                    <tr key={p.id}>
+                      <td colSpan={6}>
+                        <form
+                          className="delete-confirm"
+                          onSubmit={(e) => {
+                            e.preventDefault()
+                            void run(p.id, async () => {
+                              const res = await deletePerson(p.id, confirmEmail)
+                              setDeleting(null)
+                              setConfirmEmail('')
+                              setDone(`Deleted ${p.name} and ${res.calls} practice ${res.calls === 1 ? 'call' : 'calls'}.`)
+                              await load()
+                            })
+                          }}
+                        >
+                          <p>
+                            <strong>Delete {p.name} for good?</strong> Their account and every practice call they made
+                            are deleted. This can't be undone. Type <code>{p.email}</code> to confirm.
+                          </p>
+                          <input
+                            value={confirmEmail}
+                            onChange={(e) => setConfirmEmail(e.target.value)}
+                            aria-label="Type their email to confirm"
+                            autoComplete="off"
+                          />
+                          <button
+                            className="danger small-button"
+                            type="submit"
+                            disabled={busy === p.id || confirmEmail.trim().toLowerCase() !== p.email}
+                          >
+                            Delete for good
+                          </button>
+                          <button
+                            className="link"
+                            type="button"
+                            onClick={() => {
+                              setDeleting(null)
+                              setConfirmEmail('')
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  ) : editing === p.id ? (
                     <tr key={p.id}>
                       <td colSpan={6}>
                         <EditPerson
@@ -175,6 +229,17 @@ export default function PeopleView({ user }: { user: Me }) {
                           </button>
                           <button className="link muted-link" disabled={busy === p.id} onClick={() => void toggle(p)}>
                             {p.disabled ? 'Turn on' : 'Turn off'}
+                          </button>
+                          <button
+                            className="link danger-link"
+                            disabled={busy === p.id}
+                            onClick={() => {
+                              setEditing(null)
+                              setConfirmEmail('')
+                              setDeleting(p.id)
+                            }}
+                          >
+                            Delete
                           </button>
                         </div>
                       )}

@@ -17,8 +17,9 @@ import {
   shareLink,
   updateClass,
 } from '../api.ts'
-import { downloadResults, downloadRoster } from '../csv.ts'
-import type { Attempt } from '../history.ts'
+import { downloadResults, downloadRoster, readiness } from '../csv.ts'
+import { SCENARIOS } from '../../shared/scenarios.ts'
+import { scoreOf, type Attempt } from '../history.ts'
 import AttemptTables from './AttemptTables.tsx'
 import CallerAvatar from './CallerAvatar.tsx'
 import { CopyButton, LinkNotice } from './CopyLink.tsx'
@@ -439,6 +440,8 @@ function AgentsPanel({
   const [reset, setReset] = useState<{ name: string; link: string } | null>(null)
   const [otherClasses, setOtherClasses] = useState<ClassSummary[]>([])
   const { agents, attempts, classInfo } = dashboard
+  const tracksReadiness = dashboard.requirements.scenarioIds.length > 0
+  const readyCount = agents.filter((a) => readiness(dashboard, a.id) === 'Ready').length
 
   // Other active classes this trainer runs, for "Move to".
   useEffect(() => {
@@ -519,7 +522,15 @@ function AgentsPanel({
       ) : (
         <section className="card">
           <div className="section-head">
-            <h2>Agents</h2>
+            <h2>
+              Agents
+              {tracksReadiness && (
+                <span className="muted small">
+                  {' '}
+                  · {readyCount} of {agents.length} ready for live calls
+                </span>
+              )}
+            </h2>
             <button className="secondary" onClick={() => downloadRoster(dashboard)}>
               ⬇ Download list (spreadsheet)
             </button>
@@ -532,6 +543,7 @@ function AgentsPanel({
                   <th>Email</th>
                   <th className="num">Calls</th>
                   <th className="num">Avg score</th>
+                  {tracksReadiness && <th>Ready for live calls</th>}
                   <th>Last active</th>
                   <th>
                     <span className="sr-only">Actions</span>
@@ -542,12 +554,12 @@ function AgentsPanel({
                 {agents.map((a) => {
                   const calls = attempts.filter((c) => c.userId === a.id)
                   const avg = calls.length
-                    ? Math.round(calls.reduce((n, c) => n + c.scorecard.overall_score, 0) / calls.length)
+                    ? Math.round(calls.reduce((n, c) => n + scoreOf(c), 0) / calls.length)
                     : null
                   if (editing === a.id) {
                     return (
                       <tr key={a.id}>
-                        <td colSpan={6}>
+                        <td colSpan={tracksReadiness ? 7 : 6}>
                           <EditPerson
                             person={a}
                             onDone={(changed) => {
@@ -568,6 +580,15 @@ function AgentsPanel({
                       <td>{a.email}</td>
                       <td className="num">{calls.length}</td>
                       <td className="num">{avg ?? '–'}</td>
+                      {tracksReadiness && (
+                        <td>
+                          {readiness(dashboard, a.id) === 'Ready' ? (
+                            <span className="status status-pass">✓ Ready</span>
+                          ) : (
+                            <span className="muted">{readiness(dashboard, a.id)} passed</span>
+                          )}
+                        </td>
+                      )}
                       <td>{when(a.lastSeenAt)}</td>
                       <td>
                         <div className="row-actions">
@@ -632,7 +653,7 @@ function ScenariosPanel({
     setBusyId(scenario.id)
     setError(null)
     try {
-      onChanged(await archiveScenario(dashboard.classInfo.id, scenario.id, !scenario.archived))
+      onChanged(await archiveScenario(dashboard.flow.id, scenario.id, !scenario.archived))
     } catch (e) {
       setError(message(e, 'Could not update the scenario.'))
     } finally {
@@ -646,7 +667,8 @@ function ScenariosPanel({
         <div>
           <h2>Your scenarios</h2>
           <p className="muted">
-            Practice calls for {dashboard.classInfo.name}, on the <strong>{dashboard.flow.name}</strong> call flow.
+            Practice calls on the <strong>{dashboard.flow.name}</strong> call flow. They're shared by every class on
+            this call flow, so new classes get them automatically.
             {dashboard.flow.builtIn && ' Agents also see the built-in sample calls.'}
           </p>
         </div>
@@ -671,7 +693,7 @@ function ScenariosPanel({
           {dashboard.scenarios.map((s) => {
             const runs = dashboard.attempts.filter((a) => a.scenarioId === s.id)
             const avg = runs.length
-              ? Math.round(runs.reduce((n, a) => n + a.scorecard.overall_score, 0) / runs.length)
+              ? Math.round(runs.reduce((n, a) => n + scoreOf(a), 0) / runs.length)
               : null
             return (
               <article key={s.id} className={`card scenario-card ${s.archived ? 'is-hidden' : ''}`}>
@@ -797,9 +819,10 @@ function SettingsPanel({
           </button>
         </p>
         <FlowSelect flows={flows} value={flowId} onChange={setFlowId} />
-        {flowChanged && hasScenarios && (
+        {flowChanged && (hasScenarios || dashboard.requirements.scenarioIds.length > 0) && (
           <p className="small warn-text">
-            Your scenarios were written for the current call flow. Check them after switching.
+            Scenarios belong to each call flow, so agents will see the new flow's scenarios. The calls required
+            for "Ready" are cleared, so pick them again after switching.
           </p>
         )}
         <button
@@ -810,6 +833,8 @@ function SettingsPanel({
           Use this call flow
         </button>
       </div>
+
+      <ReadinessCard dashboard={dashboard} onSaved={onChanged} />
 
       {isAdmin && (
         <div className="card setup-card">
@@ -858,6 +883,77 @@ function SettingsPanel({
     </div>
   )
 }
+
+// Which scenarios an agent must pass (and at what score) to count as ready for live calls.
+function ReadinessCard({ dashboard, onSaved }: { dashboard: ClassDashboard; onSaved: () => void }) {
+  const [required, setRequired] = useState<string[]>(dashboard.requirements.scenarioIds)
+  const [passScore, setPassScore] = useState(String(dashboard.requirements.passScore))
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+  const choices = [
+    ...dashboard.scenarios.filter((s) => !s.archived || required.includes(s.id)),
+    ...(dashboard.flow.builtIn ? SCENARIOS : []),
+  ]
+  const changed =
+    passScore !== String(dashboard.requirements.passScore) ||
+    required.length !== dashboard.requirements.scenarioIds.length ||
+    required.some((id) => !dashboard.requirements.scenarioIds.includes(id))
+
+  const save = async () => {
+    setBusy(true)
+    setMessage(null)
+    try {
+      await updateClass(dashboard.classInfo.id, { requiredScenarios: required, passScore: Number(passScore) })
+      setMessage({ ok: true, text: 'Saved.' })
+      onSaved()
+    } catch (err) {
+      setMessage({ ok: false, text: message_(err) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card setup-card readiness-card">
+      <h2>Ready for live calls</h2>
+      <p className="muted small">
+        Pick the practice calls every agent must pass. An agent is <strong>Ready</strong> once they've passed each one
+        with at least the passing score. Leave all unchecked to turn this off.
+      </p>
+      {choices.length === 0 ? (
+        <p className="muted small">Add scenarios on the Scenarios tab first.</p>
+      ) : (
+        <ul className="check-choices">
+          {choices.map((s) => (
+            <li key={s.id}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={required.includes(s.id)}
+                  onChange={(e) =>
+                    setRequired(e.target.checked ? [...required, s.id] : required.filter((id) => id !== s.id))
+                  }
+                />
+                {s.title}
+                {s.archived && <span className="muted small"> (hidden)</span>}
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      <label className="inline-field">
+        <span>Passing score</span>
+        <input type="number" min={0} max={100} value={passScore} onChange={(e) => setPassScore(e.target.value)} />
+      </label>
+      {message && <p className={message.ok ? 'notice' : 'error'}>{message.text}</p>}
+      <button className="secondary" disabled={!changed || busy} onClick={() => void save()}>
+        {busy ? 'Saving…' : 'Save'}
+      </button>
+    </div>
+  )
+}
+
+const message_ = (err: unknown) => message(err, 'That did not work. Try again.')
 
 export default function TrainerView(props: Props) {
   return (

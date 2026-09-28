@@ -1,4 +1,7 @@
-import { attemptTitle, type Attempt } from '../history.ts'
+import { useState } from 'react'
+import type { CallResult } from '../../shared/classes.ts'
+import { reviewCall } from '../api.ts'
+import { attemptTitle, resultOf, scoreOf, type Attempt } from '../history.ts'
 import type { SaveNote } from './CallScreen.tsx'
 
 interface Props {
@@ -7,6 +10,9 @@ interface Props {
   backLabel: string
   onRetry?: () => void
   onBack: () => void
+  // Trainers and admins can add a note and correct the score.
+  canReview?: boolean
+  onReviewed?: (attempt: Attempt) => void
 }
 
 const RESULT_LABEL = { pass: '✓ Pass', needs_work: '! Needs work', fail: '✕ Fail' } as const
@@ -22,9 +28,12 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.round(n)))
 }
 
-export default function ScorecardView({ attempt, saveNote, backLabel, onRetry, onBack }: Props) {
+export default function ScorecardView({ attempt, saveNote, backLabel, onRetry, onBack, canReview, onReviewed }: Props) {
   const { scorecard: sc } = attempt
-  const score = clamp(sc.overall_score, 0, 100)
+  const score = clamp(scoreOf(attempt), 0, 100)
+  const result = resultOf(attempt)
+  const aiScore = clamp(sc.overall_score, 0, 100)
+  const corrected = attempt.review?.score != null || attempt.review?.result != null
 
   return (
     <div className="scorecard">
@@ -37,9 +46,10 @@ export default function ScorecardView({ attempt, saveNote, backLabel, onRetry, o
         <div className="score-number">
           <span className="value">{score}</span>
           <span className="unit">/ 100</span>
+          {corrected && <span className="muted small ai-score">AI score: {aiScore}</span>}
         </div>
         <div className="score-summary">
-          <span className={`status status-${sc.result}`}>{RESULT_LABEL[sc.result]}</span>
+          <span className={`status status-${result}`}>{RESULT_LABEL[result]}</span>
           <h2>{attemptTitle(attempt)}</h2>
           <p className="muted">{sc.outcome}</p>
           <p className="muted small">
@@ -58,6 +68,9 @@ export default function ScorecardView({ attempt, saveNote, backLabel, onRetry, o
           </button>
         </div>
       </section>
+
+      {attempt.review && !canReview && <ReviewNote attempt={attempt} />}
+      {canReview && onReviewed && <ReviewForm attempt={attempt} onReviewed={onReviewed} />}
 
       <section className="card">
         <h3>Coaching</h3>
@@ -168,5 +181,109 @@ export default function ScorecardView({ attempt, saveNote, backLabel, onRetry, o
         </div>
       </details>
     </div>
+  )
+}
+
+// What the agent sees: their trainer's note and any corrected score.
+function ReviewNote({ attempt }: { attempt: Attempt }) {
+  const review = attempt.review!
+  return (
+    <section className="card review-card">
+      <h3>Note from {review.by ?? 'your trainer'}</h3>
+      {review.note && <p className="review-text">{review.note}</p>}
+      {(review.score !== null || review.result !== null) && (
+        <p className="muted small">
+          Your trainer corrected this call's score
+          {review.score !== null && ` to ${review.score}`}
+          {review.result !== null && ` (${RESULT_LABEL[review.result]})`}. The AI gave{' '}
+          {Math.round(attempt.scorecard.overall_score)}.
+        </p>
+      )}
+    </section>
+  )
+}
+
+// Trainers: a note for the agent, and optionally a corrected score and result.
+function ReviewForm({ attempt, onReviewed }: { attempt: Attempt; onReviewed: (attempt: Attempt) => void }) {
+  const [note, setNote] = useState(attempt.review?.note ?? '')
+  const [score, setScore] = useState(attempt.review?.score?.toString() ?? '')
+  const [result, setResult] = useState<CallResult | ''>(attempt.review?.result ?? '')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const save = async (clear = false) => {
+    setBusy(true)
+    setMessage(null)
+    try {
+      const updated = await reviewCall(
+        attempt.id,
+        clear
+          ? { note: '', score: null, result: null }
+          : { note, score: score.trim() === '' ? null : Number(score), result: result || null },
+      )
+      if (clear) {
+        setNote('')
+        setScore('')
+        setResult('')
+      }
+      setMessage({ ok: true, text: clear ? 'Review removed.' : 'Saved. The agent sees your note on this call.' })
+      onReviewed(updated)
+    } catch (err) {
+      setMessage({ ok: false, text: err instanceof Error ? err.message : 'Could not save the review.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="card review-card">
+      <h3>Your review</h3>
+      <p className="muted small">
+        Leave a note for {attempt.agentName}. If the AI got the score wrong, correct it here; corrected scores count
+        for "Ready for live calls".
+        {attempt.review?.by && ` Last reviewed by ${attempt.review.by}.`}
+      </p>
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        rows={3}
+        maxLength={2000}
+        placeholder="Example: Great opening. Next time, give the recording disclosure before any questions."
+        aria-label="Note for the agent"
+      />
+      <div className="review-fields">
+        <label className="inline-field">
+          <span>Corrected score</span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={score}
+            onChange={(e) => setScore(e.target.value)}
+            placeholder={String(Math.round(attempt.scorecard.overall_score))}
+          />
+        </label>
+        <label className="inline-field">
+          <span>Result</span>
+          <select value={result} onChange={(e) => setResult(e.target.value as CallResult | '')}>
+            <option value="">Keep the AI's ({RESULT_LABEL[attempt.scorecard.result]})</option>
+            <option value="pass">{RESULT_LABEL.pass}</option>
+            <option value="needs_work">{RESULT_LABEL.needs_work}</option>
+            <option value="fail">{RESULT_LABEL.fail}</option>
+          </select>
+        </label>
+      </div>
+      {message && <p className={message.ok ? 'notice' : 'error'}>{message.text}</p>}
+      <div className="card-actions">
+        <button className="primary" disabled={busy} onClick={() => void save()}>
+          {busy ? 'Saving…' : 'Save review'}
+        </button>
+        {attempt.review && (
+          <button className="link muted-link" disabled={busy} onClick={() => void save(true)}>
+            Remove review
+          </button>
+        )}
+      </div>
+    </section>
   )
 }
