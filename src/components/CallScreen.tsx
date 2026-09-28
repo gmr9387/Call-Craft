@@ -3,6 +3,7 @@ import { CALL_FLOW, END_MARKERS, type Scenario, type Turn } from '../../shared/s
 import { getProspectReply, scoreCall } from '../api.ts'
 import { saveAttempt, type Attempt } from '../history.ts'
 import type { ClassInfo } from '../../shared/classes.ts'
+import CallerAvatar from './CallerAvatar.tsx'
 import { canListen, canSpeak, createRecognition, speak, stopSpeaking, type Recognition } from '../speech.ts'
 
 interface Props {
@@ -54,6 +55,7 @@ export default function CallScreen({ scenario, agentName, classInfo, preview = f
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const callOver = endNote !== null
+  const callerFirst = scenario.leadName.split(' ')[0]
 
   useEffect(() => {
     if (callOver) return
@@ -173,17 +175,20 @@ export default function CallScreen({ scenario, agentName, classInfo, preview = f
     <div className="call-layout">
       <section className="card call-panel">
         <div className="call-header">
-          <div>
-            <p className="eyebrow">
-              {preview ? 'Trainer preview' : 'Outbound call'} · {scenario.title}
-            </p>
-            <h2>
-              Calling {scenario.leadName}
-              <span className={`status-dot ${callOver ? 'ended' : 'live'}`} aria-hidden />
-            </h2>
-            <p className="muted small">
-              {scenario.program} · {callOver ? 'Call ended' : 'Connected'} · {formatTime(elapsed)}
-            </p>
+          <div className="call-who">
+            <CallerAvatar name={scenario.leadName} size="lg" />
+            <div>
+              <p className="eyebrow">
+                {preview ? 'Trainer preview' : 'Outbound call'} · {scenario.title}
+              </p>
+              <h2>
+                Calling {scenario.leadName}
+                <span className={`status-dot ${callOver ? 'ended' : 'live'}`} aria-hidden />
+              </h2>
+              <p className="muted small">
+                {scenario.program} · {callOver ? 'Call ended' : 'Connected'} · {formatTime(elapsed)}
+              </p>
+            </div>
           </div>
           <div className="call-controls">
             {canSpeak && (
@@ -209,11 +214,12 @@ export default function CallScreen({ scenario, agentName, classInfo, preview = f
 
         <div className="transcript" ref={scrollRef} aria-live="polite">
           <div className="turn prospect">
-            <span className="who">{scenario.leadName.split(' ')[0]}?</span>
+            <span className="who">{callerFirst}?</span>
             <p>Hello?</p>
           </div>
           {transcript.map((turn, i) => (
             <div key={i} className={`turn ${turn.speaker}`}>
+              {/* Neutral label: the person who answers isn't always the lead. */}
               <span className="who">{turn.speaker === 'agent' ? 'You' : 'Prospect'}</span>
               <p>{turn.text}</p>
             </div>

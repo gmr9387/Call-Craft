@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import type { ClassInfo, JoinResult } from '../../shared/classes.ts'
 import { CALL_FLOW, SCENARIOS, SCHOOL_NAME, type Scenario } from '../../shared/scenarios.ts'
 import { joinClass } from '../api.ts'
+import CallerAvatar from './CallerAvatar.tsx'
 
 interface Props {
   agentName: string
@@ -91,16 +92,13 @@ export function ScenarioGrid({
             <span className={`pill difficulty-${s.difficulty.toLowerCase()}`}>{s.difficulty}</span>
           </div>
           <p>{s.focus}</p>
-          <dl className="lead">
+          <div className="caller">
+            <CallerAvatar name={s.leadName} />
             <div>
-              <dt>Calling</dt>
-              <dd>{s.leadName}</dd>
+              <strong>{s.leadName}</strong>
+              <span className="muted small">{s.program}</span>
             </div>
-            <div>
-              <dt>Program</dt>
-              <dd>{s.program}</dd>
-            </div>
-          </dl>
+          </div>
           <button className="primary" disabled={!canStart} onClick={() => onStart(s)}>
             Start call
           </button>
