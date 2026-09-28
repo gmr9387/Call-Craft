@@ -81,6 +81,9 @@ export const setDisabled = (userId: string, disabled: boolean) =>
 export const updatePerson = (userId: string, name: string, email: string) =>
   post('/api/people', { action: 'update', userId, name, email })
 
+export const setRole = (userId: string, role: 'admin' | 'trainer' | 'agent') =>
+  post('/api/people', { action: 'role', userId, role })
+
 export const deletePerson = (userId: string, confirmEmail: string) =>
   post<{ ok: true; calls: number }>('/api/people', { action: 'delete', userId, confirmEmail })
 
@@ -130,19 +133,28 @@ export interface Check {
 export const systemStatus = () => post<SystemStatus>('/api/admin', { action: 'status' })
 export const saveLimits = (limits: SpendingLimits) => post('/api/admin', { action: 'limits', ...limits })
 export const checkSystem = () => post<{ ai: Check; database: Check }>('/api/admin', { action: 'check-ai' })
+export const exportEverything = () => post<Record<string, unknown>>('/api/admin', { action: 'export' })
 export const saveRetention = (days: number) =>
   post<{ retentionDays: number; deleted: number }>('/api/admin', { action: 'retention', days })
 
 // ---- Practice calls ----
 
-export async function getProspectReply(scenarioId: string, transcript: Turn[]): Promise<string> {
-  const { text } = await post<{ text: string }>('/api/coach', { action: 'reply', scenarioId, transcript })
-  return text
+export interface ProspectReply {
+  // The caller's line, with end-of-call markers already taken out (may be empty).
+  text: string
+  ended: 'hang_up' | 'transferred' | null
+  // Proof the conversation is real; sent with the next reply and with scoring.
+  signature: string | null
+}
+
+export function getProspectReply(scenarioId: string, transcript: Turn[], signature: string | null): Promise<ProspectReply> {
+  return post<ProspectReply>('/api/coach', { action: 'reply', scenarioId, transcript, signature })
 }
 
 export interface ScoreOptions {
   // False for trainer preview calls.
   save: boolean
+  signature: string | null
   startedAt: string
   durationSec: number
 }
@@ -196,6 +208,16 @@ export const loadDashboard = (classId: string) => post<ClassDashboard>('/api/cla
 
 export const removeAgent = (classId: string, userId: string) =>
   post('/api/classes', { action: 'remove-agent', classId, userId })
+
+// One call with its full conversation (lists leave the conversation out).
+export async function getCall(attemptId: string): Promise<SavedAttempt> {
+  return (await post<{ attempt: SavedAttempt }>('/api/classes', { action: 'call', attemptId })).attempt
+}
+
+// Every call in a class, for the results download.
+export async function exportClassCalls(classId: string): Promise<SavedAttempt[]> {
+  return (await post<{ attempts: SavedAttempt[] }>('/api/classes', { action: 'export', classId })).attempts
+}
 
 export async function myClass(): Promise<JoinResult | null> {
   return (await post<{ joined: JoinResult | null }>('/api/classes', { action: 'mine' })).joined

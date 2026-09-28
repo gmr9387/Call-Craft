@@ -1,4 +1,5 @@
-import type { ClassDashboard } from '../shared/classes.ts'
+import type { ClassDashboard, SavedAttempt } from '../shared/classes.ts'
+import { exportClassCalls } from './api.ts'
 import { attemptTitle, resultOf, scoreOf } from './history.ts'
 
 type Cell = string | number | null | undefined
@@ -14,7 +15,11 @@ function cell(value: Cell): string {
 export function downloadCsv(filename: string, rows: Cell[][]): void {
   // The byte-order mark makes Excel open the file as UTF-8.
   const csv = '﻿' + rows.map((r) => r.map(cell).join(',')).join('\r\n')
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  downloadFile(filename, new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+}
+
+export function downloadFile(filename: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = filename
@@ -27,11 +32,12 @@ const today = () => new Date().toISOString().slice(0, 10)
 
 const RESULT = { pass: 'Pass', needs_work: 'Needs work', fail: 'Fail' } as const
 
-// Every scored call in the class, one row per call.
-export function downloadResults(dashboard: ClassDashboard): void {
+// Every scored call in the class (fetched in full, not just the calls on screen), one row per call.
+export async function downloadResults(dashboard: ClassDashboard): Promise<void> {
+  const attempts: SavedAttempt[] = await exportClassCalls(dashboard.classInfo.id)
   const rows: Cell[][] = [
     ['Date', 'Agent', 'Scenario', 'Score', 'Result', 'AI score', 'Trainer note', 'Rules broken', 'Missed steps', 'Minutes'],
-    ...dashboard.attempts.map((a) => [
+    ...attempts.map((a) => [
       new Date(a.startedAt).toLocaleString(),
       a.agentName,
       attemptTitle(a),

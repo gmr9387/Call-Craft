@@ -4,6 +4,7 @@ import {
   cleanEmail,
   cleanName,
   deletePerson,
+  setRole,
   updatePerson,
   createInvite,
   createResetLink,
@@ -24,6 +25,7 @@ const NOT_FOUND = "That person wasn't found.";
 // - "update" (admins; trainers for agents in their classes): fix someone's name or email
 // - "disable" (admins): turn an account off or back on
 // - "delete" (admins): delete an account and every practice call it made (for data requests)
+// - "role" (admins): make someone an admin, trainer, or agent
 // Links are returned as tokens; the browser turns them into full links to copy.
 export async function POST(request: Request): Promise<Response> {
   const body = await readJson(request);
@@ -72,6 +74,19 @@ export async function POST(request: Request): Promise<Response> {
         const target = await userById(id);
         if (!target || !(await setDisabled(id, body.disabled === true))) return json({ error: NOT_FOUND }, 404);
         await logActivity(admin, body.disabled === true ? "Turned off account" : "Turned on account", `${target.name} (${target.email})`);
+        return json({ ok: true });
+      }
+      case "role": {
+        const admin = await requireUser(request, "admin");
+        const id = cleanId(body.userId);
+        const target = id ? await userById(id) : null;
+        if (!target) return json({ error: NOT_FOUND }, 404);
+        if (target.id === admin.id) return json({ error: "You can't change your own role. Ask another admin." }, 400);
+        const role = body.role === "admin" || body.role === "trainer" || body.role === "agent" ? body.role : null;
+        if (!role) return json({ error: "Choose admin, trainer, or agent." }, 400);
+        if (role === target.role) return json({ ok: true });
+        await setRole(target.id, role);
+        await logActivity(admin, "Changed role", `${target.name} (${target.email}): ${target.role} → ${role}`);
         return json({ ok: true });
       }
       case "delete": {

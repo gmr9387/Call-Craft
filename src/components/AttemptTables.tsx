@@ -1,5 +1,5 @@
 import { SCENARIOS, type Scenario } from '../../shared/scenarios.ts'
-import { attemptTitle, resultOf, scoreOf, type Attempt } from '../history.ts'
+import { attemptTitle, peopleIn, personKey, resultOf, scoreOf, type Attempt } from '../history.ts'
 
 interface Props {
   attempts: Attempt[]
@@ -33,11 +33,11 @@ function mostMissedStep(attempts: Attempt[]): string | null {
 }
 
 export default function AttemptTables({ attempts, onOpen, showAgents = false, customScenarios = [] }: Props) {
-  const agents = [...new Set(attempts.map((a) => a.agentName))].sort()
-
-  const byAgent = agents.map((name) => {
-    const runs = attempts.filter((a) => a.agentName === name)
+  // Grouped by person, so two agents with the same name aren't merged.
+  const byAgent = peopleIn(attempts).map(({ key, name }) => {
+    const runs = attempts.filter((a) => personKey(a) === key)
     return {
+      key,
       name,
       runs: runs.length,
       avg: average(runs.map((a) => scoreOf(a))),
@@ -83,7 +83,7 @@ export default function AttemptTables({ attempts, onOpen, showAgents = false, cu
             </thead>
             <tbody>
               {byAgent.map((row) => (
-                <tr key={row.name}>
+                <tr key={row.key}>
                   <td>{row.name}</td>
                   <td className="num">{row.runs}</td>
                   <td className="num">{row.avg ?? '–'}</td>

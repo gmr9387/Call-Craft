@@ -19,7 +19,7 @@ import {
 } from '../api.ts'
 import { downloadResults, downloadRoster, readiness } from '../csv.ts'
 import { SCENARIOS } from '../../shared/scenarios.ts'
-import { scoreOf, type Attempt } from '../history.ts'
+import { peopleIn, personKey, scoreOf, type Attempt } from '../history.ts'
 import AttemptTables from './AttemptTables.tsx'
 import CallerAvatar from './CallerAvatar.tsx'
 import { CopyButton, LinkNotice } from './CopyLink.tsx'
@@ -37,6 +37,9 @@ interface Props {
   onTry: (scenario: Scenario, classInfo: ClassInfo, flow: CallFlow) => void
   onFlows: () => void
 }
+
+// The server sends at most this many calls with a class dashboard.
+const DASHBOARD_LIMIT = 1000
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : '–')
 const message = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback)
@@ -391,9 +394,23 @@ function ClassPanel({
 
 function ResultsPanel({ dashboard, onOpen }: { dashboard: ClassDashboard; onOpen: (attempt: Attempt) => void }) {
   const [agent, setAgent] = useState('all')
+  const [downloading, setDownloading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const { attempts, classInfo } = dashboard
-  const agents = [...new Set(attempts.map((a) => a.agentName))].sort()
-  const shown = agent === 'all' ? attempts : attempts.filter((a) => a.agentName === agent)
+  const agents = peopleIn(attempts)
+  const shown = agent === 'all' ? attempts : attempts.filter((a) => personKey(a) === agent)
+
+  const download = async () => {
+    setDownloading(true)
+    setError(null)
+    try {
+      await downloadResults(dashboard)
+    } catch (err) {
+      setError(message(err, 'Could not download the results.'))
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   if (attempts.length === 0) {
     return (
@@ -409,17 +426,27 @@ function ResultsPanel({ dashboard, onOpen }: { dashboard: ClassDashboard; onOpen
           <span className="small muted">Show</span>
           <select value={agent} onChange={(e) => setAgent(e.target.value)}>
             <option value="all">All agents ({agents.length})</option>
-            {agents.map((name) => (
-              <option key={name} value={name}>
-                {name}
+            {agents.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.name}
               </option>
             ))}
           </select>
         </label>
-        <button className="secondary" onClick={() => downloadResults(dashboard)}>
-          ⬇ Download results (spreadsheet)
+        <button className="secondary" onClick={() => void download()} disabled={downloading}>
+          {downloading ? 'Preparing…' : '⬇ Download results (spreadsheet)'}
         </button>
       </div>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {attempts.length >= DASHBOARD_LIMIT && (
+        <p className="muted small">
+          Showing the latest {DASHBOARD_LIMIT.toLocaleString()} calls. The download includes every call.
+        </p>
+      )}
       <AttemptTables attempts={shown} onOpen={onOpen} showAgents={agent === 'all'} customScenarios={dashboard.scenarios} />
     </>
   )

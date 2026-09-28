@@ -9,6 +9,8 @@ export interface SavedCall {
   flow: CallFlow
   preview: ClassInfo | null
   transcript: Turn[]
+  // The server's signature over the conversation, needed to continue or score it.
+  signature: string | null
   startedAt: string
   elapsed: number
   endNote: string | null

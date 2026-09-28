@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   checkSystem,
+  exportEverything,
   saveLimits,
   saveRetention,
   systemStatus,
@@ -8,7 +9,7 @@ import {
   type SpendingLimits,
   type SystemStatus,
 } from '../api.ts'
-import { downloadCsv } from '../csv.ts'
+import { downloadCsv, downloadFile } from '../csv.ts'
 
 const ago = (iso: string) => {
   const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
@@ -115,6 +116,23 @@ export default function SystemView() {
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const backup = async () => {
+    setBusy('export')
+    setError(null)
+    try {
+      const data = await exportEverything()
+      downloadFile(
+        `callcraft-backup-${new Date().toISOString().slice(0, 10)}.json`,
+        new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
+      )
+      apply(await systemStatus())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not download the data.')
     } finally {
       setBusy(null)
     }
@@ -283,6 +301,19 @@ export default function SystemView() {
           </button>
         </div>
       </form>
+
+      <section className="card invite-card">
+        <div>
+          <h2>Download all data</h2>
+          <p className="muted small">
+            A copy of everything CallCraft keeps (people, classes, call flows, scenarios, every call, and the activity
+            log), for a backup or a data request. Passwords are never included. Keep the file somewhere safe.
+          </p>
+        </div>
+        <button className="secondary" onClick={() => void backup()} disabled={busy === 'export'}>
+          {busy === 'export' ? 'Preparing…' : '⬇ Download all data'}
+        </button>
+      </section>
 
       <section className="card">
         <div className="section-head">

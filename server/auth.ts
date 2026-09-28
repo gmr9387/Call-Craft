@@ -183,11 +183,29 @@ export async function userById(id: string): Promise<User | null> {
   return rows[0] ? toUser(rows[0] as never) : null;
 }
 
-export async function changePassword(userId: string, current: string, next: string): Promise<boolean> {
+// Changing your password also signs you out of every other browser (this one stays signed in).
+export async function changePassword(
+  request: Request,
+  userId: string,
+  current: string,
+  next: string,
+): Promise<boolean> {
   const rows = await db()`select password_hash from users where id = ${userId}`;
   if (!rows[0] || !(await verifyPassword(current, rows[0].password_hash))) return false;
   await db()`update users set password_hash = ${await hashPassword(next)} where id = ${userId}`;
+  const token = readCookie(request, SESSION_COOKIE);
+  await db()`delete from sessions where user_id = ${userId} and token_hash <> ${token ? tokenHash(token) : ""}`;
   return true;
+}
+
+// Admins change someone's role. Trainers and admins aren't in a class; agents keep theirs.
+export async function setRole(userId: string, role: Role): Promise<boolean> {
+  const rows = await db()`
+    update users set role = ${role}, class_id = ${role === "agent" ? db()`class_id` : null}
+    where id = ${userId}
+    returning id
+  `;
+  return rows.length > 0;
 }
 
 export async function listPeople(): Promise<Person[]> {

@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireUser } from "../server/auth.js";
 import { CoachError, pingAI } from "../server/coach.js";
 import { recentActivity, logActivity } from "../server/audit.js";
-import { db, pingDb, purgeOldCalls } from "../server/db.js";
+import { db, exportEverything, pingDb, purgeOldCalls } from "../server/db.js";
 import { env } from "../server/env.js";
 import { anthropicReason, errorResponse, json, readJson } from "../server/http.js";
 import { checkUsage, spendingLimits, usageSummary, UsageLimitError } from "../server/limits.js";
@@ -23,6 +23,7 @@ class LimitInputError extends Error {}
 // - "limits": change the spending limits (takes effect within a minute)
 // - "check-ai": send one tiny AI request to see if the AI is working
 // - "retention": how many days to keep practice calls (0 keeps them forever)
+// - "export": everything CallCraft stores (not passwords), for a backup or a data request
 export async function POST(request: Request): Promise<Response> {
   const body = await readJson(request);
   if (!body) return json({ error: "Invalid JSON body." }, 400);
@@ -80,6 +81,10 @@ export async function POST(request: Request): Promise<Response> {
           `${limits.dailyTotal}/day, ${limits.perClientHourly}/person/hour, ${limits.draftsPerClassDaily} drafts`,
         );
         return json({ limits });
+      }
+      case "export": {
+        await logActivity(admin, "Downloaded all data", "backup export");
+        return json(await exportEverything());
       }
       case "retention": {
         const days = limitValue(body.days, "The number of days");

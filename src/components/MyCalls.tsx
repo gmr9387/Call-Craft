@@ -24,7 +24,10 @@ export default function MyCalls({ onOpen }: Props) {
       ) : attempts.length === 0 ? (
         <p className="card empty">No calls yet. Finish a practice call and it shows up here.</p>
       ) : (
-        <AttemptTables attempts={attempts} onOpen={onOpen} />
+        <>
+          <AttemptTables attempts={attempts} onOpen={onOpen} />
+          {attempts.length >= 300 && <p className="muted small">Showing your latest 300 calls.</p>}
+        </>
       )}
     </div>
   )

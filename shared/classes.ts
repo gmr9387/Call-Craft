@@ -53,6 +53,8 @@ export interface SavedAttempt {
   transcript: Turn[];
   scorecard: ScorecardResult;
   review?: CallReview;
+  // Set on calls in lists, where the conversation isn't sent (open the call to load it).
+  partial?: boolean;
 }
 
 // What an agent must pass to count as ready for live calls.

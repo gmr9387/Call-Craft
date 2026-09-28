@@ -2,7 +2,7 @@ import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 
 // A stand-in for the Anthropic API, so tests never spend money or need a key.
-export type FakeMode = 'ok' | 'credit' | 'badkey' | 'no-fallback'
+export type FakeMode = 'ok' | 'credit' | 'badkey' | 'no-fallback' | 'hangup'
 
 export interface RecordedRequest {
   model: string
@@ -78,7 +78,9 @@ export async function startFakeAnthropic() {
         ? JSON.stringify(draft)
         : body.output_config?.format
           ? JSON.stringify(scorecard)
-          : 'Hi, this is Jordan.'
+          : mode === 'hangup'
+            ? 'Take me off your list. [HANGS UP]'
+            : 'Hi, this is Jordan.'
       res.end(
         JSON.stringify({
           id: 'msg_test',
