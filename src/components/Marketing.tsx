@@ -5,21 +5,9 @@ interface Props {
 }
 
 const STEPS = [
-  { title: 'Pick a practice call', text: 'Each one has a different kind of caller: friendly, rushed, upset, or confused.' },
-  { title: 'Talk to the AI caller', text: 'Type or speak. The caller reacts to what the agent says, just like a real person.' },
-  { title: 'Get a score and tips', text: 'Right after the call: what went well, what was missed, and exactly what to say next time.' },
-]
-
-const CHECKS = [
-  { title: 'Every step of the call', text: 'Greeting, verifying the right person, the recording notice, questions, and the transfer.' },
-  { title: 'The rules', text: 'Stopping when someone says "don\'t call me," and never promising prices or aid.' },
-  { title: 'People skills', text: 'Tone, patience, handling pushback, and staying in control of the call.' },
-]
-
-const TRAINER = [
-  { title: 'See the whole class', text: 'Every agent\'s scores in one place, and the step each agent misses most.' },
-  { title: 'Make your own practice calls', text: 'Describe a caller in one sentence. CallCraft writes the rest. Edit it and share it.' },
-  { title: 'Spot problems early', text: 'Rule-breaking calls are flagged, so you can coach before the first real call.' },
+  { title: 'Pick a call', text: 'Friendly, rushed, upset, or confused. Each practice call has a different caller.' },
+  { title: 'Talk it through', text: 'Type or speak. The AI caller reacts to what you say, like a real person.' },
+  { title: 'Get your score', text: 'See what went well, what you missed, and what to say next time.' },
 ]
 
 export default function Marketing({ onSignIn }: Props) {
@@ -32,31 +20,21 @@ export default function Marketing({ onSignIn }: Props) {
           </span>{' '}
           CallCraft
         </span>
-        <nav>
-          <a href="#how">How it works</a>
-          <a href="#trainers">For trainers</a>
-          <button className="primary" onClick={onSignIn}>
-            Sign in
-          </button>
-        </nav>
+        <button className="primary" onClick={onSignIn}>
+          Sign in
+        </button>
       </header>
 
       <section className="mk-hero">
         <div className="mk-hero-text">
-          <p className="eyebrow">Call practice for contact center agents</p>
-          <h1>Better agents before their first real call.</h1>
+          <h1>Practice calls before the real ones.</h1>
           <p className="mk-lead">
-            New agents practice real-sounding calls with an AI caller and get scored the moment they hang up. Trainers
-            see the whole class in one place.
+            Agents talk to an AI caller and get scored the moment they hang up. Trainers see the whole class in one
+            place.
           </p>
-          <div className="mk-cta">
-            <button className="primary big" onClick={onSignIn}>
-              Sign in
-            </button>
-            <a className="secondary big as-button" href="#how">
-              See how it works
-            </a>
-          </div>
+          <button className="primary big" onClick={onSignIn}>
+            Sign in
+          </button>
         </div>
 
         <div className="mk-preview card" aria-label="Example of a practice call and its score">
@@ -81,11 +59,10 @@ export default function Marketing({ onSignIn }: Props) {
         </div>
       </section>
 
-      <section id="how" className="mk-section">
-        <h2>How it works</h2>
+      <section className="mk-section">
         <ol className="mk-steps">
           {STEPS.map((s, i) => (
-            <li key={s.title} className="card">
+            <li key={s.title}>
               <span className="mk-step-num">{i + 1}</span>
               <h3>{s.title}</h3>
               <p>{s.text}</p>
@@ -94,46 +71,12 @@ export default function Marketing({ onSignIn }: Props) {
         </ol>
       </section>
 
-      <section className="mk-section">
-        <h2>What every call is checked for</h2>
-        <div className="mk-grid">
-          {CHECKS.map((c) => (
-            <div key={c.title} className="card">
-              <h3>{c.title}</h3>
-              <p>{c.text}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section id="trainers" className="mk-section">
-        <h2>Built for trainers</h2>
-        <div className="mk-grid">
-          {TRAINER.map((c) => (
-            <div key={c.title} className="card">
-              <h3>{c.title}</h3>
-              <p>{c.text}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="mk-section mk-note card">
-        <h2>Practice on a computer, like the real job</h2>
-        <p>
-          Agents practice on a desktop or laptop, the same way they'll take real calls. Every practice caller is made
-          up, so no real customer information is ever used.
-        </p>
-      </section>
-
-      <section className="mk-final">
-        <h2>Ready to try it?</h2>
-        <button className="primary big" onClick={onSignIn}>
+      <footer className="mk-footer">
+        <span className="muted small">© {YEAR} CallCraft · Practice callers are made up. No real customer data.</span>
+        <button className="link" onClick={onSignIn}>
           Sign in
         </button>
-      </section>
-
-      <footer className="mk-footer muted small">© {YEAR} CallCraft</footer>
+      </footer>
     </div>
   )
 }

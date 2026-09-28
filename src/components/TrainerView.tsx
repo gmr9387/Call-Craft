@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { ClassDashboard, ClassInfo } from '../../shared/classes.ts'
 import type { Scenario } from '../../shared/scenarios.ts'
 import { archiveScenario, createClass, loadDashboard } from '../api.ts'
-import { clearAttempts, loadAttempts, loadTrainerKey, saveTrainerKey, type Attempt } from '../history.ts'
+import { loadTrainerKey, saveTrainerKey, type Attempt } from '../history.ts'
 import AttemptTables from './AttemptTables.tsx'
 
 interface Props {
@@ -17,7 +17,6 @@ interface ClassPanelProps extends Props {
   onTry: (scenario: Scenario, classInfo: ClassInfo) => void
 }
 
-type Tab = 'class' | 'device'
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
@@ -371,56 +370,14 @@ function ScenariosPanel({
   )
 }
 
-function DevicePanel({ onOpen }: Props) {
-  const [attempts, setAttempts] = useState(loadAttempts)
-
-  if (attempts.length === 0) {
-    return <p className="card empty">No practice calls on this device yet. Finish and score a call to see it here.</p>
-  }
-  return (
-    <>
-      <div className="composer-actions">
-        <button
-          className="secondary"
-          onClick={() => {
-            if (confirm('Delete all practice calls saved on this device? Calls saved to a class are not affected.')) {
-              clearAttempts()
-              setAttempts([])
-            }
-          }}
-        >
-          Clear this device
-        </button>
-      </div>
-      <AttemptTables attempts={attempts} onOpen={onOpen} />
-    </>
-  )
-}
-
 export default function TrainerView({ onOpen, initialSection, onBuild, onTry }: ClassPanelProps) {
-  const [tab, setTab] = useState<Tab>('class')
-
   return (
     <div className="history">
-      <div className="history-head">
-        <div>
-          <h1>Trainer</h1>
-          <p className="muted">See how your class is doing and make practice calls for them.</p>
-        </div>
-        <div className="tabs" role="tablist">
-          <button role="tab" aria-selected={tab === 'class'} onClick={() => setTab('class')}>
-            My class
-          </button>
-          <button role="tab" aria-selected={tab === 'device'} onClick={() => setTab('device')}>
-            Calls on this computer
-          </button>
-        </div>
+      <div className="page-head">
+        <h1>Trainer</h1>
+        <p className="muted">See how your class is doing and make practice calls for them.</p>
       </div>
-      {tab === 'class' ? (
-        <ClassPanel onOpen={onOpen} initialSection={initialSection} onBuild={onBuild} onTry={onTry} />
-      ) : (
-        <DevicePanel onOpen={onOpen} />
-      )}
+      <ClassPanel onOpen={onOpen} initialSection={initialSection} onBuild={onBuild} onTry={onTry} />
     </div>
   )
 }

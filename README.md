@@ -30,7 +30,8 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
     - **All calls:** each call, with its full scorecard and transcript
 - **Scenario builder** (trainers): describe a caller in one sentence and click **Write it for me**. The AI fills in the scenario: name, difficulty, what to practice, who the caller is and how they act, and what the agent must do to pass. The trainer edits anything, saves, and can **Try it** right away; trial calls aren't saved. Agents in the class see these scenarios under **From your trainer**. Trainers can hide a scenario from agents at any time.
 - **This device**: calls are also kept in the browser, so the app works without a class or a database.
-- **Marketing page and sign-in**: the site opens on a marketing page. **Sign in** currently lets anyone in with one click (development only; there are no accounts or passwords yet).
+- **Marketing page and sign-in**: the site opens on a simple marketing page. **Sign in** currently lets anyone in with one click (development only; there are no accounts or passwords yet).
+- **Dashboard**: after signing in, a left menu (Dashboard, Practice, My calls, Trainer). The dashboard shows the next call to practice, your name and class, three numbers (calls, average score, calls passed), and your recent calls.
 - **Desktop only**: the app itself needs a window at least 900px wide, like an agent's real workstation. On phones it asks the person to use a computer. The marketing page works on any screen.
 
 ## How it works

@@ -8,12 +8,16 @@ interface Props {
   onNameChange: (name: string) => void
   classInfo: ClassInfo | null
   classScenarios: Scenario[]
-  onJoin: (result: JoinResult) => void
-  onLeave: () => void
   onStart: (scenario: Scenario) => void
 }
 
-function ClassJoin({ classInfo, onJoin, onLeave }: Pick<Props, 'classInfo' | 'onJoin' | 'onLeave'>) {
+interface ClassJoinProps {
+  classInfo: ClassInfo | null
+  onJoin: (result: JoinResult) => void
+  onLeave: () => void
+}
+
+export function ClassJoin({ classInfo, onJoin, onLeave }: ClassJoinProps) {
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -69,7 +73,7 @@ function ClassJoin({ classInfo, onJoin, onLeave }: Pick<Props, 'classInfo' | 'on
   )
 }
 
-function ScenarioGrid({
+export function ScenarioGrid({
   scenarios,
   canStart,
   onStart,
@@ -106,44 +110,45 @@ function ScenarioGrid({
   )
 }
 
-export default function Home({ agentName, onNameChange, classInfo, classScenarios, onJoin, onLeave, onStart }: Props) {
+export default function Home({ agentName, onNameChange, classInfo, classScenarios, onStart }: Props) {
+  const hasName = !!agentName.trim()
   return (
     <div className="home">
-      <section className="hero">
-        <h1>Practice a call</h1>
-        <p>Talk to a pretend caller. When the call ends, you get a score and tips to get better.</p>
-        <label className="name-field">
-          <span>Your name</span>
-          <input
-            value={agentName}
-            onChange={(e) => onNameChange(e.target.value)}
-            placeholder="First and last name"
-            autoComplete="name"
-          />
-        </label>
-        <ClassJoin classInfo={classInfo} onJoin={onJoin} onLeave={onLeave} />
+      <section className="page-head">
+        <h1>Practice</h1>
+        <p className="muted">Pick a call. When it ends, you get a score and tips.</p>
+        {!hasName && (
+          <label className="name-field">
+            <span>First, type your name</span>
+            <input
+              value={agentName}
+              onChange={(e) => onNameChange(e.target.value)}
+              placeholder="First and last name"
+              autoComplete="name"
+            />
+          </label>
+        )}
       </section>
 
       {classScenarios.length > 0 && (
         <section>
           <h2>From your trainer</h2>
           <p className="muted">Practice calls made for {classInfo?.name}.</p>
-          <ScenarioGrid scenarios={classScenarios} canStart={!!agentName.trim()} onStart={onStart} />
+          <ScenarioGrid scenarios={classScenarios} canStart={hasName} onStart={onStart} />
         </section>
       )}
 
       <section>
-        <h2>{classScenarios.length > 0 ? 'More practice calls' : 'Pick a practice call'}</h2>
+        <h2>{classScenarios.length > 0 ? 'More practice calls' : 'Practice calls'}</h2>
         <p className="muted">
           You'll call someone who asked about {SCHOOL_NAME} (a made-up school). Each call has a different kind of
           person on the other end.
         </p>
-        <ScenarioGrid scenarios={SCENARIOS} canStart={!!agentName.trim()} onStart={onStart} />
-        {!agentName.trim() && <p className="muted small">Type your name above to start a call.</p>}
+        <ScenarioGrid scenarios={SCENARIOS} canStart={hasName} onStart={onStart} />
       </section>
 
-      <section className="card flow-card">
-        <h2>The steps of every call</h2>
+      <details className="card flow-card">
+        <summary>The steps of every call</summary>
         <ol className="flow-list">
           {CALL_FLOW.map((step) => (
             <li key={step.id}>
@@ -151,7 +156,7 @@ export default function Home({ agentName, onNameChange, classInfo, classScenario
             </li>
           ))}
         </ol>
-      </section>
+      </details>
     </div>
   )
 }
