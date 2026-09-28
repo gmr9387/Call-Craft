@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { CoachError } from "./coach.js";
 import { DbNotConfiguredError, ScenarioLimitError } from "./db.js";
+import { UsageLimitError } from "./limits.js";
 
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -29,6 +30,9 @@ export function anthropicReason(error: InstanceType<typeof Anthropic.APIError>):
 export function errorResponse(error: unknown): Response {
   if (error instanceof CoachError) {
     return json({ error: error.message }, 422);
+  }
+  if (error instanceof UsageLimitError) {
+    return json({ error: error.message }, 429);
   }
   if (error instanceof ScenarioLimitError) {
     return json({ error: error.message }, 409);

@@ -45,6 +45,7 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
 | `shared/scenarioInput.ts` | Scenario builder fields and validation (Zod) |
 | `server/coach.ts` | Claude calls: the prospect's next line (low effort, for fast replies) and the structured scorecard (high effort) |
 | `server/db.ts` | Postgres access: classes, saved calls, dashboard |
+| `server/limits.ts` | Spending limits on AI requests |
 | `api/coach.ts` | `POST /api/coach`: `action: "reply" \| "score"`; `score` saves to the class when a class code is sent |
 | `api/classes.ts` | `POST /api/classes`: `action: "create" \| "join" \| "dashboard"` |
 | `api/health.ts` | `GET /api/health`: is the AI key working, is the database connected |
@@ -59,6 +60,19 @@ The API key and database connection only live on the server; the browser never t
 - `CALLCRAFT_SCORING_MODEL`: scoring and scenario drafts (defaults to `CALLCRAFT_MODEL`)
 
 For example, set `CALLCRAFT_SCORING_MODEL=claude-opus-5` for more careful scoring at a higher cost. The effort setting is only sent to models that support it. The server-side refusal fallback is only used with Claude Opus 5 and Claude Fable 5.1.
+
+## Spending limits
+
+Every AI request (a caller reply, a score, a scenario draft, a health check) is counted before it goes to Anthropic, so a stuck script or a busy day can't run up the bill. When a limit is hit, the person sees a plain message ("today's practice limit was reached", "you're going a little fast") and no AI request is made.
+
+| Setting | Default | What it limits |
+|---|---|---|
+| `CALLCRAFT_DAILY_AI_LIMIT` | 1500 | AI requests per day, whole site |
+| `CALLCRAFT_HOURLY_CLIENT_LIMIT` | 120 | AI requests per hour from one computer |
+| `CALLCRAFT_DAILY_DRAFT_LIMIT` | 25 | "Write it for me" drafts per class per day |
+| `CALLCRAFT_HOURLY_HEALTH_LIMIT` | 10 | `/api/health` AI checks per hour from one computer |
+
+A practice call is usually 10–20 requests, so the default daily limit covers roughly 75–150 calls. Raise it in Vercel as more agents start. Counts are kept in the `ai_usage` table (computers are stored only as a salted hash; set `CALLCRAFT_USAGE_SALT` to any random text). Without a database, counts are kept in memory instead. AI requests also time out after 60 seconds and retry once.
 
 ## Database
 
@@ -97,7 +111,16 @@ Open `/api/health` on any deployment (for example `https://your-site.vercel.app/
 ```bash
 npm run build   # type-checks the app, server, and API, then builds
 npm run lint
+npm test        # API tests with a fake AI (no Anthropic key or credit needed)
 ```
+
+The tests never call the real Anthropic API. Class and scenario tests also need Postgres; point `TEST_DATABASE_URL` at an empty database (the tests apply `db/schema.sql` themselves). Without it those tests are skipped.
+
+```bash
+TEST_DATABASE_URL=postgres://postgres@localhost:5432/callcraft npm test
+```
+
+GitHub Actions runs lint, build, and all tests (with a Postgres service) on every pull request and on `main`.
 
 ## Next steps
 
