@@ -21,7 +21,14 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
   - Scenario goals
   - Five soft-skill scores
   - Coaching tips
-- **Trainer view**: every scored call saved in the browser, filterable by agent, with averages and pass rates per scenario.
+- **Classes and trainer dashboard**:
+  - A trainer creates a class, for example one certification class. They get a **class code** to give agents and a private **trainer key**.
+  - Agents enter the class code on the Practice page. Each call they score is saved to the class by the server, so trainers see the score the server produced, not one sent from the browser.
+  - The trainer dashboard, opened with the trainer key from any device, shows:
+    - **By agent:** calls, average score, pass rate, compliance issues, most-missed call step, last practiced
+    - **By scenario:** calls, average score, pass rate
+    - **All calls:** each call, with its full scorecard and transcript
+- **This device**: calls are also kept in the browser, so the app works without a class or a database.
 
 ## How it works
 
@@ -29,17 +36,33 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
 |---|---|
 | `shared/scenarios.ts` | Call flow, scenarios, and hidden prospect personas |
 | `shared/scorecard.ts` | Scorecard schema (Zod) |
+| `shared/classes.ts` | Class and saved-call types |
 | `server/coach.ts` | Claude calls: the prospect's next line (low effort, for fast replies) and the structured scorecard (high effort) |
-| `api/coach.ts` | Single serverless endpoint (`POST /api/coach` with `action: "reply" \| "score"`) |
+| `server/db.ts` | Postgres access: classes, saved calls, dashboard |
+| `api/coach.ts` | `POST /api/coach`: `action: "reply" \| "score"`; `score` saves to the class when a class code is sent |
+| `api/classes.ts` | `POST /api/classes`: `action: "create" \| "join" \| "dashboard"` |
+| `db/schema.sql` | Database schema (safe to re-run) |
 | `src/` | React UI |
 
-The API key only lives on the server. The default model is `claude-opus-5`, and the server-side refusal fallback is enabled.
+The API key and database connection only live on the server; the browser never talks to the database. The default model is `claude-opus-5`, and the server-side refusal fallback is enabled.
+
+## Database
+
+Class dashboards need Postgres. Without `DATABASE_URL` everything else still works, and calls are kept on each device only.
+
+1. Create a Postgres database. On Supabase, use a new project just for CallCraft.
+2. Run `db/schema.sql` against it. On Supabase, paste it into the SQL editor.
+3. Set `DATABASE_URL`. On Supabase, use the **transaction pooler** connection string (port 6543), which works well with serverless functions.
+
+Row-level security is on with no policies, so Supabase's public REST API can't read these tables. Only the server reaches them.
+
+**Access model (pilot-grade):** there are no user logins yet. Anyone with a class code can save calls to that class. Anyone with the trainer key can view all of that class's calls, so treat the key like a password. Real trainer and agent accounts are the next step before wider use.
 
 ## Run locally
 
 ```bash
 npm install
-cp .env.example .env   # then set ANTHROPIC_API_KEY
+cp .env.example .env   # then set ANTHROPIC_API_KEY (and DATABASE_URL for classes)
 npm run dev
 ```
 
@@ -47,7 +70,7 @@ npm run dev
 
 ## Deploy
 
-Deploy to Vercel as a Vite project and set `ANTHROPIC_API_KEY` in the project's environment variables. `api/coach.ts` becomes a serverless function automatically.
+Deploy to Vercel as a Vite project and set `ANTHROPIC_API_KEY` and `DATABASE_URL` in the project's environment variables. The files in `api/` become serverless functions automatically.
 
 ## Checks
 
@@ -58,6 +81,6 @@ npm run lint
 
 ## Next steps
 
-- Sync results to a database so trainers can see a whole certification class.
+- Trainer and agent logins in place of shared codes and keys.
 - Let trainers add their own scenarios and scripts (under the client's permission during a pilot).
 - Real-time voice calls instead of browser speech.

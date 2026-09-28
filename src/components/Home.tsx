@@ -1,12 +1,74 @@
+import { useState, type FormEvent } from 'react'
+import type { ClassInfo } from '../../shared/classes.ts'
 import { CALL_FLOW, SCENARIOS, SCHOOL_NAME, type Scenario } from '../../shared/scenarios.ts'
+import { joinClass } from '../api.ts'
 
 interface Props {
   agentName: string
   onNameChange: (name: string) => void
+  classInfo: ClassInfo | null
+  onClassChange: (info: ClassInfo | null) => void
   onStart: (scenario: Scenario) => void
 }
 
-export default function Home({ agentName, onNameChange, onStart }: Props) {
+function ClassJoin({ classInfo, onClassChange }: Pick<Props, 'classInfo' | 'onClassChange'>) {
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (classInfo) {
+    return (
+      <div className="class-joined">
+        <span>
+          Practicing in <strong>{classInfo.name}</strong> <span className="muted">({classInfo.classCode})</span>. Your
+          scored calls are shared with your trainer.
+        </span>
+        <button className="link" onClick={() => onClassChange(null)}>
+          Leave class
+        </button>
+      </div>
+    )
+  }
+
+  const join = async (e: FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      onClassChange(await joinClass(code))
+      setCode('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not join that class.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="class-join" onSubmit={join}>
+      <label>
+        <span>Class code (optional, from your trainer)</span>
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          placeholder="e.g. K7M4QX"
+          maxLength={20}
+          autoComplete="off"
+        />
+      </label>
+      <button className="secondary" type="submit" disabled={!code.trim() || busy}>
+        {busy ? 'Joining…' : 'Join class'}
+      </button>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+    </form>
+  )
+}
+
+export default function Home({ agentName, onNameChange, classInfo, onClassChange, onStart }: Props) {
   return (
     <div className="home">
       <section className="hero">
@@ -24,6 +86,7 @@ export default function Home({ agentName, onNameChange, onStart }: Props) {
             autoComplete="name"
           />
         </label>
+        <ClassJoin classInfo={classInfo} onClassChange={onClassChange} />
       </section>
 
       <section>
