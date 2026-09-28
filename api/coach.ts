@@ -2,10 +2,11 @@ import { requireUser, type User } from "../server/auth.js";
 import { prospectReply, scoreCall } from "../server/coach.js";
 import { classById, purgeOldCalls, resolveFlow, saveAttempt, scenarioWithFlow } from "../server/db.js";
 import { retentionDays } from "../server/settings.js";
+import { signTranscript, verifyTranscript } from "../server/signing.js";
 import { BUILTIN_FLOW, type CallFlow } from "../shared/flows.js";
 import { errorResponse, json, readJson } from "../server/http.js";
 import { checkUsage } from "../server/limits.js";
-import { getScenario, isCustomScenarioId, type Scenario, type Turn } from "../shared/scenarios.js";
+import { END_MARKERS, getScenario, isCustomScenarioId, type Scenario, type Turn } from "../shared/scenarios.js";
 
 const MAX_TURNS = 80;
 const MAX_TURN_CHARS = 2000;
@@ -64,12 +65,25 @@ export async function POST(request: Request): Promise<Response> {
     const { scenario, flow } = resolved;
     const classId = user.role === "agent" ? user.classId : null;
 
+    if (body.action !== "reply" && body.action !== "score") {
+      return json({ error: "Unknown action." }, 400);
+    }
+    // Only conversations the server really had can continue or be scored.
+    await verifyTranscript(user.id, scenario.id, transcript, body.signature);
+
     if (body.action === "reply") {
       await checkUsage("reply", request, null, user.id);
-      return json({ text: await prospectReply(scenario, flow, transcript) });
-    }
-    if (body.action !== "score") {
-      return json({ error: "Unknown action." }, 400);
+      const raw = await prospectReply(scenario, flow, transcript);
+      // The end-of-call markers are taken out here, and the signature covers exactly the line
+      // the browser adds to the conversation.
+      const ended = raw.includes(END_MARKERS.transferred) ? "transferred" : raw.includes(END_MARKERS.hangUp) ? "hang_up" : null;
+      let text = raw;
+      for (const marker of Object.values(END_MARKERS)) text = text.replaceAll(marker, "");
+      text = text.trim();
+      const signature = text
+        ? await signTranscript(user.id, scenario.id, [...transcript, { speaker: "prospect", text }])
+        : (body.signature ?? null);
+      return json({ text, ended, signature });
     }
 
     await checkUsage("score", request, null, user.id);

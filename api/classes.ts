@@ -1,7 +1,9 @@
 import { AuthError, canManageClass, requireUser, userById, type User } from "../server/auth.js";
 import { logActivity } from "../server/audit.js";
 import {
+  attemptById,
   attemptClassId,
+  classCallsForExport,
   classById,
   classDashboard,
   classForAgent,
@@ -76,6 +78,8 @@ const RESULTS: CallResult[] = ["pass", "needs_work", "fail"];
 // - "reassign" (admins): hand a class to another trainer
 // - "remove-agent" / "move-agent" (trainers and admins): take an agent out, or move them to another class
 // - "review" (trainers and admins): a note on a call, and optionally a corrected score and result
+// - "call": one call with its full conversation (your own, or one in a class you manage)
+// - "export" (trainers and admins): every call in a class, for the results download
 // - "mine" (agents): your class, its call flow and scenarios, and your progress
 // - "join" (agents): move to another class with its code
 export async function POST(request: Request): Promise<Response> {
@@ -195,6 +199,22 @@ export async function POST(request: Request): Promise<Response> {
           `${attempt.agentName}, ${attempt.scenarioTitle ?? attempt.scenarioId}${score !== null ? ` (score ${score})` : ""}`,
         );
         return json({ attempt });
+      }
+      case "call": {
+        const id = cleanId(body.attemptId);
+        const found = id ? await attemptById(id) : null;
+        const allowed =
+          !!found &&
+          (found.userId === user.id ||
+            (found.classId ? await canManageClass(user, found.classId) : user.role === "admin"));
+        return allowed ? json({ attempt: found!.attempt }) : json({ error: "That call wasn't found." }, 404);
+      }
+      case "export": {
+        const id = await managedClassId(user, body.classId);
+        const cls = id ? await classById(id) : null;
+        if (!id || !cls) return json({ error: NOT_FOUND }, 404);
+        await logActivity(user, "Downloaded class results", cls.name);
+        return json({ attempts: await classCallsForExport(id) });
       }
       case "mine": {
         return json({ joined: user.classId ? await classForAgent(user.classId, user.id) : null });

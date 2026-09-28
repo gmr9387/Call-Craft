@@ -135,14 +135,22 @@ export const saveRetention = (days: number) =>
 
 // ---- Practice calls ----
 
-export async function getProspectReply(scenarioId: string, transcript: Turn[]): Promise<string> {
-  const { text } = await post<{ text: string }>('/api/coach', { action: 'reply', scenarioId, transcript })
-  return text
+export interface ProspectReply {
+  // The caller's line, with end-of-call markers already taken out (may be empty).
+  text: string
+  ended: 'hang_up' | 'transferred' | null
+  // Proof the conversation is real; sent with the next reply and with scoring.
+  signature: string | null
+}
+
+export function getProspectReply(scenarioId: string, transcript: Turn[], signature: string | null): Promise<ProspectReply> {
+  return post<ProspectReply>('/api/coach', { action: 'reply', scenarioId, transcript, signature })
 }
 
 export interface ScoreOptions {
   // False for trainer preview calls.
   save: boolean
+  signature: string | null
   startedAt: string
   durationSec: number
 }

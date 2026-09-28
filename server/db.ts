@@ -154,8 +154,13 @@ const DASHBOARD_LIMIT = 1000;
 const ATTEMPT_COLUMNS = `id, user_id, agent_name, scenario_id, scenario_title, started_at, duration_sec, transcript,
   scorecard, review_note, review_score, review_result, reviewed_by_name, reviewed_at`;
 
+// The same, without the conversation, for lists (the conversation loads when a call is opened).
+const ATTEMPT_LIST_COLUMNS = ATTEMPT_COLUMNS.replace("transcript,", "");
+
 function toAttempt(r: postgres.Row): SavedAttempt {
+  const partial = r.transcript === undefined;
   return {
+    ...(partial ? { partial: true } : {}),
     id: r.id,
     userId: r.user_id ?? undefined,
     agentName: r.agent_name,
@@ -163,7 +168,7 @@ function toAttempt(r: postgres.Row): SavedAttempt {
     scenarioTitle: r.scenario_title ?? undefined,
     startedAt: new Date(r.started_at).toISOString(),
     durationSec: r.duration_sec,
-    transcript: r.transcript,
+    transcript: r.transcript ?? [],
     scorecard: r.scorecard,
     review: r.reviewed_at
       ? {
@@ -201,7 +206,7 @@ export async function classDashboard(classId: string): Promise<ClassDashboard | 
 
   const [attempts, agents, scenarios, flow] = await Promise.all([
     db()`
-      select ${db().unsafe(ATTEMPT_COLUMNS)}
+      select ${db().unsafe(ATTEMPT_LIST_COLUMNS)}
       from attempts
       where class_id = ${classId}
       order by created_at desc
@@ -359,6 +364,43 @@ export async function myAttempts(userId: string): Promise<SavedAttempt[]> {
     limit ${MY_CALLS_LIMIT}
   `;
   return rows.map(toAttempt);
+}
+
+// One call with its full conversation, and who it belongs to.
+export async function attemptById(
+  id: string,
+): Promise<{ attempt: SavedAttempt; classId: string | null; userId: string | null } | null> {
+  const rows = await db()`select ${db().unsafe(ATTEMPT_COLUMNS)}, class_id from attempts where id = ${id}`;
+  return rows[0] ? { attempt: toAttempt(rows[0]), classId: rows[0].class_id ?? null, userId: rows[0].user_id ?? null } : null;
+}
+
+const EXPORT_LIMIT = 50_000;
+
+// Every call in a class, for the results download (without conversations).
+export async function classCallsForExport(classId: string): Promise<SavedAttempt[]> {
+  const rows = await db()`
+    select ${db().unsafe(ATTEMPT_LIST_COLUMNS)}
+    from attempts
+    where class_id = ${classId}
+    order by created_at desc
+    limit ${EXPORT_LIMIT}
+  `;
+  return rows.map(toAttempt);
+}
+
+// Everything CallCraft stores, for an admin's backup or a data request. Passwords, sessions,
+// and one-time links are left out.
+export async function exportEverything(): Promise<Record<string, unknown>> {
+  const sql = db();
+  const [people, classes, flows, scenarios, calls, activity] = await Promise.all([
+    sql`select id, name, email, role, class_id, disabled, created_at, last_seen_at from users order by created_at`,
+    sql`select id, name, class_code, trainer_id, flow_id, archived, required_scenarios, pass_score, created_at from classes order by created_at`,
+    sql`select id, name, company, purpose, end_goal, steps, rules, archived, created_at, updated_at from call_flows order by created_at`,
+    sql`select id, flow_id, title, difficulty, focus, lead_name, program, persona, success_criteria, not_applicable, archived, created_at from scenarios order by created_at`,
+    sql`select ${sql.unsafe(ATTEMPT_COLUMNS)}, class_id, created_at from attempts order by created_at limit ${EXPORT_LIMIT}`,
+    sql`select at, actor_name, action, target from audit_log order by at`,
+  ]);
+  return { exportedAt: new Date().toISOString(), people, classes, callFlows: flows, scenarios, calls, activity };
 }
 
 // The class a call was saved to (null for calls outside a class), or undefined if there's no such call.

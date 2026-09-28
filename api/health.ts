@@ -38,7 +38,12 @@ async function checkDb(): Promise<Check> {
     await pingDb();
     return { ok: true, detail: "Connected, tables found." };
   } catch (error) {
-    return { ok: false, detail: error instanceof Error ? error.message : "Unknown error." };
+    // This page is public, so it gives a plain reason and never the raw error (which can name servers).
+    console.error("Health check database error:", error);
+    const code = (error as { code?: string }).code;
+    if (code === "42P01") return { ok: false, detail: "Connected, but tables are missing: run db/schema.sql." };
+    if (code === "28P01") return { ok: false, detail: "The database rejected the password in DATABASE_URL." };
+    return { ok: false, detail: `Couldn't reach the database${code ? ` (code ${code})` : ""}. Check DATABASE_URL.` };
   }
 }
 

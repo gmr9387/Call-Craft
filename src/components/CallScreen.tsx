@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { END_MARKERS, type Scenario, type Turn } from '../../shared/scenarios.ts'
+import type { Scenario, Turn } from '../../shared/scenarios.ts'
 import type { CallFlow } from '../../shared/flows.ts'
 import type { ClassInfo } from '../../shared/classes.ts'
 import { clearActiveCall, saveActiveCall, type SavedCall } from '../activeCall.ts'
@@ -29,13 +29,10 @@ export interface SaveNote {
   text: string
 }
 
-function stripMarkers(text: string, flow: CallFlow): { text: string; ended: string | null } {
-  let ended: string | null = null
-  let clean = text
-  if (clean.includes(END_MARKERS.hangUp)) ended = 'The prospect hung up.'
-  if (clean.includes(END_MARKERS.transferred)) ended = `The call reached its goal: ${flow.endGoal}.`
-  for (const marker of Object.values(END_MARKERS)) clean = clean.replaceAll(marker, '')
-  return { text: clean.trim(), ended }
+function endNoteFor(ended: 'hang_up' | 'transferred' | null, flow: CallFlow): string | null {
+  if (ended === 'transferred') return `The call reached its goal: ${flow.endGoal}.`
+  if (ended === 'hang_up') return 'The prospect hung up.'
+  return null
 }
 
 function formatTime(sec: number): string {
@@ -48,6 +45,8 @@ export default function CallScreen({ scenario, flow, agentName, userId, preview,
   const [waiting, setWaiting] = useState(false)
   const [phase, setPhase] = useState<Phase>('live')
   const [endNote, setEndNote] = useState<string | null>(resume?.endNote ?? null)
+  // The server's proof that this conversation really happened; sent with every reply and the score.
+  const [signature, setSignature] = useState<string | null>(resume?.signature ?? null)
   const [error, setError] = useState<string | null>(null)
   const [showGuide, setShowGuide] = useState(true)
   const [voiceOut, setVoiceOut] = useState(canSpeak)
@@ -81,8 +80,18 @@ export default function CallScreen({ scenario, flow, agentName, userId, preview,
     if (transcript.length === 0) return
     // The timer is saved to the nearest 10 seconds, so the call isn't saved every second.
     const savedElapsed = saveSlot * 10
-    saveActiveCall({ userId, scenario, flow, preview: preview ?? null, transcript, startedAt, elapsed: savedElapsed, endNote })
-  }, [transcript, endNote, saveSlot, userId, scenario, flow, preview, startedAt])
+    saveActiveCall({
+      userId,
+      scenario,
+      flow,
+      preview: preview ?? null,
+      transcript,
+      signature,
+      startedAt,
+      elapsed: savedElapsed,
+      endNote,
+    })
+  }, [transcript, signature, endNote, saveSlot, userId, scenario, flow, preview, startedAt])
 
   useEffect(() => {
     if (voiceOutRef.current && !resumed.current) speak('Hello?')
@@ -129,12 +138,14 @@ export default function CallScreen({ scenario, flow, agentName, userId, preview,
     setInput('')
     setWaiting(true)
     try {
-      const reply = stripMarkers(await getProspectReply(scenario.id, next), flow)
+      const reply = await getProspectReply(scenario.id, next, signature)
       if (reply.text) {
         setTranscript([...next, { speaker: 'prospect', text: reply.text }])
         if (voiceOut) speak(reply.text)
       }
-      if (reply.ended) setEndNote(reply.ended)
+      setSignature(reply.signature)
+      const ended = endNoteFor(reply.ended, flow)
+      if (ended) setEndNote(ended)
     } catch (e) {
       // Roll the agent's line back into the box so they can resend it.
       setTranscript(transcript)
@@ -157,6 +168,7 @@ export default function CallScreen({ scenario, flow, agentName, userId, preview,
     try {
       const result = await scoreCall(scenario.id, transcript, {
         save: !preview,
+        signature,
         startedAt,
         durationSec: elapsed,
       })

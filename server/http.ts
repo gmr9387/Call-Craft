@@ -3,6 +3,7 @@ import { CoachError } from "./coach.js";
 import { DbNotConfiguredError, ScenarioLimitError } from "./db.js";
 import { UsageLimitError } from "./limits.js";
 import { AccountInputError, AuthError } from "./auth.js";
+import { TamperedCallError } from "./signing.js";
 
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -34,6 +35,9 @@ export function anthropicReason(error: InstanceType<typeof Anthropic.APIError>):
 export function errorResponse(error: unknown): Response {
   if (error instanceof AuthError) {
     return json({ error: error.message }, error.status);
+  }
+  if (error instanceof TamperedCallError) {
+    return json({ error: error.message }, 400);
   }
   if (error instanceof AccountInputError) {
     return json({ error: error.message }, 400);

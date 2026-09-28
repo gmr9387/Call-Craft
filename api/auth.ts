@@ -127,8 +127,11 @@ export async function POST(request: Request): Promise<Response> {
       case "password": {
         const user = await requireUser(request);
         const next = cleanPassword(body.newPassword);
-        const ok = await changePassword(user.id, typeof body.currentPassword === "string" ? body.currentPassword : "", next);
-        if (!ok) return json({ error: "Your current password isn't right." }, 400);
+        const current = typeof body.currentPassword === "string" ? body.currentPassword : "";
+        if (!(await changePassword(request, user.id, current, next))) {
+          return json({ error: "Your current password isn't right." }, 400);
+        }
+        await logActivity(user, "Changed own password", "other browsers signed out");
         return json({ ok: true });
       }
       default:
