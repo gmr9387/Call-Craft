@@ -46,6 +46,7 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
 | `server/db.ts` | Postgres access: classes, saved calls, dashboard |
 | `api/coach.ts` | `POST /api/coach`: `action: "reply" \| "score"`; `score` saves to the class when a class code is sent |
 | `api/classes.ts` | `POST /api/classes`: `action: "create" \| "join" \| "dashboard"` |
+| `api/health.ts` | `GET /api/health`: is the AI key working, is the database connected |
 | `api/scenarios.ts` | `POST /api/scenarios` (needs the trainer key): `action: "draft" \| "create" \| "update" \| "archive"` |
 | `db/schema.sql` | Database schema (safe to re-run) |
 | `src/` | React UI |
@@ -79,6 +80,10 @@ npm run dev
 ## Deploy
 
 Deploy to Vercel as a Vite project and set `ANTHROPIC_API_KEY` and `DATABASE_URL` in the project's environment variables. The files in `api/` become serverless functions automatically.
+
+## Health check
+
+Open `/api/health` on any deployment (for example `https://your-site.vercel.app/api/health`). It reports whether the Anthropic key is set and working (with Anthropic's exact error if not, such as a rejected key or low credit balance) and whether the database is connected. It never shows keys or connection strings, and it makes one tiny AI request.
 
 ## Checks
 

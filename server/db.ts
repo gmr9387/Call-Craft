@@ -21,6 +21,10 @@ function db(): postgres.Sql {
   return sql;
 }
 
+export async function pingDb(): Promise<void> {
+  await db()`select 1 from classes limit 1`;
+}
+
 export function isDbConfigured(): boolean {
   return !!process.env.DATABASE_URL;
 }

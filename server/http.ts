@@ -18,6 +18,13 @@ export async function readJson(request: Request): Promise<Record<string, unknown
   }
 }
 
+// The reason Anthropic gave, e.g. "Your credit balance is too low..." (never includes the key).
+export function anthropicReason(error: InstanceType<typeof Anthropic.APIError>): string {
+  const body = error.error as { error?: { message?: unknown } } | undefined;
+  const message = body?.error?.message;
+  return typeof message === "string" && message ? message : error.message;
+}
+
 // Maps known failures to user-facing messages; anything else is logged and hidden.
 export function errorResponse(error: unknown): Response {
   if (error instanceof CoachError) {
@@ -31,14 +38,14 @@ export function errorResponse(error: unknown): Response {
   }
   if (error instanceof Anthropic.AuthenticationError) {
     console.error("Anthropic authentication failed:", error.message);
-    return json({ error: "The AI service isn't configured. Check ANTHROPIC_API_KEY." }, 500);
+    return json({ error: "The Anthropic API key was rejected. Check ANTHROPIC_API_KEY in Vercel and redeploy." }, 500);
   }
   if (error instanceof Anthropic.RateLimitError) {
     return json({ error: "Too many requests right now. Wait a moment and try again." }, 429);
   }
   if (error instanceof Anthropic.APIError) {
     console.error(`Anthropic API error ${error.status}:`, error.message);
-    return json({ error: "The AI service had a problem. Try again." }, 502);
+    return json({ error: `The AI service returned an error (${error.status ?? "no status"}): ${anthropicReason(error)}` }, 502);
   }
   console.error(error);
   return json({ error: "Something went wrong." }, 500);
