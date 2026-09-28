@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { CoachError, pingAI } from "../server/coach.js";
 import { isDbConfigured, pingDb } from "../server/db.js";
+import { env } from "../server/env.js";
 import { anthropicReason, json } from "../server/http.js";
 
 interface Check {
@@ -9,7 +10,7 @@ interface Check {
 }
 
 async function checkAI(): Promise<Check> {
-  if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
+  if (!env("ANTHROPIC_API_KEY") && !env("ANTHROPIC_AUTH_TOKEN")) {
     return { ok: false, detail: "ANTHROPIC_API_KEY isn't set for this deployment. Add it in Vercel, then redeploy." };
   }
   try {
