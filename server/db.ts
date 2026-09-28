@@ -30,7 +30,9 @@ export function db(): postgres.Sql {
   const url = env("DATABASE_URL");
   if (!url) throw new DbNotConfiguredError();
   // prepare: false keeps this compatible with transaction-mode poolers (Supabase, Neon, PgBouncer).
-  sql ??= postgres(url, { prepare: false, max: 3, idle_timeout: 20 });
+  // Small pools per server instance: many instances run at once when lots of people use CallCraft,
+  // and the database pooler (Supabase: transaction mode, port 6543) shares connections between them.
+  sql ??= postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 10, max_lifetime: 30 * 60 });
   return sql;
 }
 
@@ -446,6 +448,20 @@ export async function purgeOldCalls(days: number): Promise<number> {
 
 export const MAX_SCENARIOS_PER_FLOW = 100;
 
+// Someone else saved the same thing after this person opened it.
+export class EditConflictError extends Error {
+  constructor(what: string) {
+    super(`Someone else changed this ${what} while you were editing. Your changes weren't saved. Reload it to see their changes, then make yours again.`);
+  }
+}
+
+// Matches when nothing was sent (older screens) or the row is unchanged since it was opened.
+export function unchangedSince(expected: string | undefined) {
+  return expected
+    ? db()`date_trunc('milliseconds', updated_at) = ${expected}::timestamptz`
+    : db()`true`;
+}
+
 export class ScenarioLimitError extends Error {
   constructor() {
     super(`A call flow can have up to ${MAX_SCENARIOS_PER_FLOW} scenarios. Hide or edit an existing one instead.`);
@@ -464,10 +480,11 @@ interface ScenarioRow {
   success_criteria: string[];
   not_applicable: string[];
   archived: boolean;
+  updated_at: Date;
 }
 
 const SCENARIO_COLUMNS =
-  "id, flow_id, title, difficulty, focus, lead_name, program, persona, success_criteria, not_applicable, archived";
+  "id, flow_id, title, difficulty, focus, lead_name, program, persona, success_criteria, not_applicable, archived, updated_at";
 
 function toScenario(r: ScenarioRow): Scenario {
   return {
@@ -482,6 +499,7 @@ function toScenario(r: ScenarioRow): Scenario {
     notApplicable: r.not_applicable,
     custom: true,
     archived: r.archived,
+    updatedAt: new Date(r.updated_at).toISOString(),
   };
 }
 
@@ -519,11 +537,13 @@ export async function createScenario(flowId: string | null, input: ScenarioInput
   return toScenario(rows[0]);
 }
 
-// Returns null when the scenario isn't on that call flow.
+// Returns null when the scenario isn't on that call flow. Throws EditConflictError when someone
+// else saved it after expectedUpdatedAt.
 export async function updateScenario(
   flowId: string | null,
   id: string,
   input: ScenarioInputValue,
+  expectedUpdatedAt?: string,
 ): Promise<Scenario | null> {
   const rows = await db()<ScenarioRow[]>`
     update scenarios set
@@ -536,10 +556,12 @@ export async function updateScenario(
       success_criteria = ${db().json(input.successCriteria)},
       not_applicable = ${db().json(input.notApplicable)},
       updated_at = now()
-    where id = ${id} and ${onFlow(flowId)}
+    where id = ${id} and ${onFlow(flowId)} and ${unchangedSince(expectedUpdatedAt)}
     returning ${db().unsafe(SCENARIO_COLUMNS)}
   `;
-  return rows[0] ? toScenario(rows[0]) : null;
+  if (rows[0]) return toScenario(rows[0]);
+  if (expectedUpdatedAt && (await scenarioWithFlow(id))?.flowId === flowId) throw new EditConflictError("scenario");
+  return null;
 }
 
 export async function setScenarioArchived(flowId: string | null, id: string, archived: boolean): Promise<Scenario | null> {

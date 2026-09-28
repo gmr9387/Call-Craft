@@ -18,6 +18,8 @@ export interface CallFlow {
   // The sample flow that ships with CallCraft (read-only).
   builtIn?: boolean;
   archived?: boolean;
+  // When it was last saved; sent back with an edit so two people can't overwrite each other.
+  updatedAt?: string;
 }
 
 // A flow in the Call flows list, with how many classes use it.

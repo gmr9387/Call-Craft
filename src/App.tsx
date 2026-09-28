@@ -111,15 +111,17 @@ export default function App() {
   const [classFlow, setClassFlow] = useState<CallFlow>(BUILTIN_FLOW)
   const [progress, setProgress] = useState<{ requirements: Requirements; passed: string[] } | null>(null)
   const [aiProblem, setAiProblem] = useState<string | null>(null)
+  const [usageWarning, setUsageWarning] = useState<string | null>(null)
   // Bumped to re-read the saved unfinished call after it's discarded.
   const [, setCallCheck] = useState(0)
   const isDesktop = useIsDesktop()
 
   useEffect(() => {
     authStatus().then(
-      ({ user, needsSetup, aiProblem }) => {
+      ({ user, needsSetup, aiProblem, usageWarning }) => {
         setSession({ state: 'ready', user, needsSetup })
         setAiProblem(aiProblem ?? null)
+        setUsageWarning(usageWarning ?? null)
         if (user) {
           // Already signed in: a sign-up or invite link in the address bar doesn't apply.
           clearUrl()
@@ -172,7 +174,11 @@ export default function App() {
     if (!isStaff) return
     let cancelled = false
     authStatus().then(
-      (s) => !cancelled && setAiProblem(s.aiProblem ?? null),
+      (s) => {
+        if (cancelled) return
+        setAiProblem(s.aiProblem ?? null)
+        setUsageWarning(s.usageWarning ?? null)
+      },
       () => undefined,
     )
     return () => {
@@ -408,6 +414,18 @@ export default function App() {
             >
               Discard it
             </button>
+          </div>
+        )}
+        {usageWarning && user.role !== 'agent' && (
+          <div className="usage-banner" role="status">
+            <strong>Heads up:</strong> {usageWarning}{' '}
+            {user.role === 'admin' ? (
+              <button className="link" onClick={() => setView({ name: 'system' })}>
+                Change the limit
+              </button>
+            ) : (
+              'An admin can raise the limit.'
+            )}
           </div>
         )}
         {view.name === 'dashboard' && (

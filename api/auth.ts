@@ -22,7 +22,7 @@ import {
 import { logActivity } from "../server/audit.js";
 import { classByCode, isDbConfigured } from "../server/db.js";
 import { cleanText, errorResponse, json, readJson } from "../server/http.js";
-import { checkSigninAllowed, recordSigninFailure } from "../server/limits.js";
+import { checkSigninAllowed, dailyUsageWarning, recordSigninFailure } from "../server/limits.js";
 import { recentAiProblem } from "../server/settings.js";
 
 // Signs the person in and returns who they are.
@@ -44,11 +44,13 @@ export async function GET(request: Request): Promise<Response> {
     }
     const user = await currentUser(request);
     // Trainers and admins see a warning when the AI stopped working in the last hour.
-    const aiProblem = user && user.role !== "agent" ? await recentAiProblem() : null;
+    const staff = !!user && user.role !== "agent";
+    const [aiProblem, usageWarning] = staff ? await Promise.all([recentAiProblem(), dailyUsageWarning()]) : [null, null];
     return json({
       user: user ? await toMe(user) : null,
       needsSetup: user ? false : await needsSetup(),
       aiProblem: aiProblem?.message ?? null,
+      usageWarning,
     });
   } catch (error) {
     return errorResponse(error);

@@ -105,6 +105,19 @@ Every AI request (a caller reply, a score, a scenario draft, a health check) is 
 
 A practice call is usually 10–20 requests, so the default daily limit covers roughly 75–150 calls. **Admins change the first three limits on the System page**; a value saved there wins over the environment variable, which wins over the default. Counts are kept in the `ai_usage` table (computers are stored only as a salted hash; set `CALLCRAFT_USAGE_SALT` to any random text). Without a database, counts are kept in memory instead. AI requests also time out after 60 seconds and retry once.
 
+## Many people at once
+
+CallCraft is built so a whole training floor can practice at the same time:
+
+- **Server:** Vercel runs as many copies of the API as traffic needs. Each copy keeps a small database connection pool, and the Supabase transaction pooler (port 6543) shares connections between them.
+- **Spending checks stay fast:** today's AI total is a running count (`ai_usage_daily`), and per-person checks use small indexed ranges, so they don't slow down as traffic grows.
+- **Busy moments:** replies get a 25-second limit with two retries, and scoring and drafts get 50 seconds with one retry. The retries wait as long as the AI service asks. Every budget fits inside the 120-second function limit in `vercel.json`. If the service is still overloaded, people see "The AI is very busy right now. Wait a few seconds and try again", and admins don't get a false alarm.
+- **No silent overwrites:** if two trainers edit the same call flow or scenario, the second save is refused with a note to reload and see the other changes.
+- **Heads-up before the cap:** trainers and admins see a banner once today's AI use passes 80% of the daily limit, and admins get a link to raise it.
+- **Tested:** the test suite runs 40 agents signing up, replying, and scoring at the same moment.
+
+For a big rollout, raise the daily limit on the System page (a practice call is about 10 to 20 AI requests). Check your Anthropic account's rate-limit tier too: new accounts start with low per-minute limits, which rise as you spend. Move Supabase and Vercel to paid plans before real use.
+
 ## Database
 
 CallCraft needs Postgres for accounts, classes, and saved calls.

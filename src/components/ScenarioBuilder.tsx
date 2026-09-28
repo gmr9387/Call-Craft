@@ -76,7 +76,7 @@ export default function ScenarioBuilder({ flow, scenario, onSaved, onCancel }: P
     setError(null)
     try {
       const cleaned = { ...fields, successCriteria: fields.successCriteria.map((g) => g.trim()).filter(Boolean) }
-      onSaved(await saveScenario(flow.id, cleaned, scenario?.id), tryIt)
+      onSaved(await saveScenario(flow.id, cleaned, scenario?.id, scenario?.updatedAt), tryIt)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the scenario.')
       setSaving(false)

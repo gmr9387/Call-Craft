@@ -2,7 +2,7 @@ import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 
 // A stand-in for the Anthropic API, so tests never spend money or need a key.
-export type FakeMode = 'ok' | 'credit' | 'badkey' | 'no-fallback' | 'hangup'
+export type FakeMode = 'ok' | 'credit' | 'badkey' | 'no-fallback' | 'hangup' | 'overloaded'
 
 export interface RecordedRequest {
   model: string
@@ -68,6 +68,7 @@ export async function startFakeAnthropic() {
       }
       if (mode === 'credit') return fail(400, 'invalid_request_error', 'Your credit balance is too low to access the Anthropic API.')
       if (mode === 'badkey') return fail(401, 'authentication_error', 'invalid x-api-key')
+      if (mode === 'overloaded') return fail(529, 'overloaded_error', 'Overloaded')
       if (mode === 'no-fallback' && (beta?.includes('server-side-fallback') || body.fallbacks)) {
         return fail(400, 'invalid_request_error', 'The beta server-side-fallback is not enabled for this organization.')
       }

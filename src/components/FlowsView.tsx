@@ -202,7 +202,7 @@ export function FlowBuilder({ flow, copy = false, onDone }: BuilderProps) {
         steps: fields.steps.filter((s) => s.label.trim() || s.guide.trim()),
         rules: fields.rules.map((r) => r.trim()).filter(Boolean),
       }
-      await saveFlow(cleaned, flow && !copy ? flow.id : undefined)
+      await saveFlow(cleaned, flow && !copy ? flow.id : undefined, flow && !copy ? flow.updatedAt : undefined)
       onDone()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the call flow.')

@@ -41,7 +41,9 @@ export async function POST(request: Request): Promise<Response> {
           return json({ flow });
         }
         const id = cleanId(body.id);
-        const flow = id ? await updateFlow(id, parsed.data) : null;
+        const expected =
+          typeof body.updatedAt === "string" && !Number.isNaN(Date.parse(body.updatedAt)) ? body.updatedAt : undefined;
+        const flow = id ? await updateFlow(id, parsed.data, expected) : null;
         if (!flow) return json({ error: NOT_FOUND }, 404);
         await logActivity(user, "Edited call flow", flow.name);
         return json({ flow });

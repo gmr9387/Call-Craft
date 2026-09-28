@@ -97,8 +97,9 @@ export async function draftFlow(description: string): Promise<FlowInputValue> {
   return (await post<{ draft: FlowInputValue }>('/api/flows', { action: 'draft', description })).draft
 }
 
-export async function saveFlow(flow: FlowInputValue, id?: string): Promise<CallFlow> {
-  return (await post<{ flow: CallFlow }>('/api/flows', { action: id ? 'update' : 'create', id, flow })).flow
+// updatedAt is when the flow was opened, so the server can refuse to overwrite someone else's newer save.
+export async function saveFlow(flow: FlowInputValue, id?: string, updatedAt?: string): Promise<CallFlow> {
+  return (await post<{ flow: CallFlow }>('/api/flows', { action: id ? 'update' : 'create', id, flow, updatedAt })).flow
 }
 
 export const archiveFlow = (id: string, archived: boolean) => post('/api/flows', { action: 'archive', id, archived })
@@ -233,11 +234,17 @@ export async function draftScenario(flowId: string, description: string): Promis
   return draft
 }
 
-export async function saveScenario(flowId: string, fields: ScenarioFields, id?: string): Promise<Scenario> {
+export async function saveScenario(
+  flowId: string,
+  fields: ScenarioFields,
+  id?: string,
+  updatedAt?: string,
+): Promise<Scenario> {
   const { scenario } = await post<{ scenario: Scenario }>('/api/scenarios', {
     action: id ? 'update' : 'create',
     flowId,
     id,
+    updatedAt,
     scenario: fields,
   })
   return scenario

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { db } from "./db.js";
+import { db, EditConflictError, unchangedSince } from "./db.js";
 import { BUILTIN_FLOW, BUILTIN_FLOW_ID, type CallFlow, type FlowInputValue, type FlowSummary } from "../shared/flows.js";
 import type { FlowStep } from "../shared/scenarios.js";
 
@@ -15,9 +15,10 @@ interface FlowRow {
   steps: FlowStep[];
   rules: string[];
   archived: boolean;
+  updated_at: Date;
 }
 
-const COLUMNS = "id, name, company, purpose, end_goal, steps, rules, archived";
+const COLUMNS = "id, name, company, purpose, end_goal, steps, rules, archived, updated_at";
 
 function toFlow(r: FlowRow): CallFlow {
   return {
@@ -29,6 +30,7 @@ function toFlow(r: FlowRow): CallFlow {
     steps: r.steps,
     rules: r.rules,
     archived: r.archived,
+    updatedAt: new Date(r.updated_at).toISOString(),
   };
 }
 
@@ -75,7 +77,13 @@ export async function createFlow(userId: string, input: FlowInputValue): Promise
   return toFlow(rows[0]);
 }
 
-export async function updateFlow(id: string, input: FlowInputValue): Promise<CallFlow | null> {
+// Returns null when there's no such flow. Throws EditConflictError when someone else saved it
+// after expectedUpdatedAt.
+export async function updateFlow(
+  id: string,
+  input: FlowInputValue,
+  expectedUpdatedAt?: string,
+): Promise<CallFlow | null> {
   const rows = await db()<FlowRow[]>`
     update call_flows set
       name = ${input.name},
@@ -85,10 +93,12 @@ export async function updateFlow(id: string, input: FlowInputValue): Promise<Cal
       steps = ${db().json(withStepIds(input.steps) as never)},
       rules = ${db().json(input.rules)},
       updated_at = now()
-    where id = ${id}
+    where id = ${id} and ${unchangedSince(expectedUpdatedAt)}
     returning ${db().unsafe(COLUMNS)}
   `;
-  return rows[0] ? toFlow(rows[0]) : null;
+  if (rows[0]) return toFlow(rows[0]);
+  if (expectedUpdatedAt && (await flowById(id))) throw new EditConflictError("call flow");
+  return null;
 }
 
 export async function setFlowArchived(id: string, archived: boolean): Promise<CallFlow | null> {

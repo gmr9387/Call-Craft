@@ -83,6 +83,8 @@ export interface Scenario {
   // Set on trainer-built scenarios, which are stored per class.
   custom?: boolean;
   archived?: boolean;
+  // Trainer-built scenarios: when it was last saved (see CallFlow.updatedAt).
+  updatedAt?: string;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
