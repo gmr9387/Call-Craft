@@ -5,8 +5,6 @@ import { joinClass } from '../api.ts'
 import CallerAvatar from './CallerAvatar.tsx'
 
 interface Props {
-  agentName: string
-  onNameChange: (name: string) => void
   classInfo: ClassInfo | null
   classScenarios: Scenario[]
   onStart: (scenario: Scenario) => void
@@ -15,22 +13,23 @@ interface Props {
 interface ClassJoinProps {
   classInfo: ClassInfo | null
   onJoin: (result: JoinResult) => void
-  onLeave: () => void
 }
 
-export function ClassJoin({ classInfo, onJoin, onLeave }: ClassJoinProps) {
+// An agent's class, with a way to move to another class using its code.
+export function ClassJoin({ classInfo, onJoin }: ClassJoinProps) {
   const [code, setCode] = useState('')
+  const [switching, setSwitching] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  if (classInfo) {
+  if (classInfo && !switching) {
     return (
       <div className="class-joined">
         <span>
           You're in <strong>{classInfo.name}</strong>. Your trainer can see your scores.
         </span>
-        <button className="link" onClick={onLeave}>
-          Leave class
+        <button className="link" onClick={() => setSwitching(true)}>
+          Switch class
         </button>
       </div>
     )
@@ -43,6 +42,7 @@ export function ClassJoin({ classInfo, onJoin, onLeave }: ClassJoinProps) {
     try {
       onJoin(await joinClass(code))
       setCode('')
+      setSwitching(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not join that class.')
     } finally {
@@ -65,6 +65,11 @@ export function ClassJoin({ classInfo, onJoin, onLeave }: ClassJoinProps) {
       <button className="secondary" type="submit" disabled={!code.trim() || busy}>
         {busy ? 'Joining…' : 'Join class'}
       </button>
+      {switching && (
+        <button className="link" type="button" onClick={() => setSwitching(false)}>
+          Cancel
+        </button>
+      )}
       {error && (
         <p className="error" role="alert">
           {error}
@@ -76,11 +81,9 @@ export function ClassJoin({ classInfo, onJoin, onLeave }: ClassJoinProps) {
 
 export function ScenarioGrid({
   scenarios,
-  canStart,
   onStart,
 }: {
   scenarios: Scenario[]
-  canStart: boolean
   onStart: (scenario: Scenario) => void
 }) {
   return (
@@ -99,7 +102,7 @@ export function ScenarioGrid({
               <span className="muted small">{s.program}</span>
             </div>
           </div>
-          <button className="primary" disabled={!canStart} onClick={() => onStart(s)}>
+          <button className="primary" onClick={() => onStart(s)}>
             Start call
           </button>
         </article>
@@ -108,31 +111,19 @@ export function ScenarioGrid({
   )
 }
 
-export default function Home({ agentName, onNameChange, classInfo, classScenarios, onStart }: Props) {
-  const hasName = !!agentName.trim()
+export default function Home({ classInfo, classScenarios, onStart }: Props) {
   return (
     <div className="home">
       <section className="page-head">
         <h1>Practice</h1>
         <p className="muted">Pick a call. When it ends, you get a score and tips.</p>
-        {!hasName && (
-          <label className="name-field">
-            <span>First, type your name</span>
-            <input
-              value={agentName}
-              onChange={(e) => onNameChange(e.target.value)}
-              placeholder="First and last name"
-              autoComplete="name"
-            />
-          </label>
-        )}
       </section>
 
       {classScenarios.length > 0 && (
         <section>
           <h2>From your trainer</h2>
           <p className="muted">Practice calls made for {classInfo?.name}.</p>
-          <ScenarioGrid scenarios={classScenarios} canStart={hasName} onStart={onStart} />
+          <ScenarioGrid scenarios={classScenarios} onStart={onStart} />
         </section>
       )}
 
@@ -142,7 +133,7 @@ export default function Home({ agentName, onNameChange, classInfo, classScenario
           You'll call someone who asked about {SCHOOL_NAME} (a made-up school). Each call has a different kind of
           person on the other end.
         </p>
-        <ScenarioGrid scenarios={SCENARIOS} canStart={hasName} onStart={onStart} />
+        <ScenarioGrid scenarios={SCENARIOS} onStart={onStart} />
       </section>
 
       <details className="card flow-card">

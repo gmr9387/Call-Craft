@@ -1774,3 +1774,185 @@ nav .link.active {
     transform: translateY(-1px);
   }
 }
+
+/* Sign-in pages */
+.app-loading {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+  background: var(--bg);
+}
+
+.auth-side {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 28px 32px;
+  overflow: hidden;
+  color: #ffffff;
+  background: #1c2a4a;
+}
+
+.auth-side img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+}
+
+.auth-side .brand,
+.auth-side p {
+  position: relative;
+  color: #ffffff;
+}
+
+.auth-side .brand {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 1.15rem;
+  width: fit-content;
+}
+
+.auth-side p {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.25;
+  max-width: 16ch;
+  margin: 0;
+}
+
+.auth-main {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 16px;
+  padding: 32px 16px;
+}
+
+.auth-card {
+  width: min(440px, 100%);
+  padding: 28px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-form h1,
+.auth-form p {
+  margin: 0;
+}
+
+.auth-field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.95rem;
+  color: var(--text-2);
+}
+
+.auth-footer {
+  display: grid;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.auth-footer p {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .auth-page {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-side {
+    min-height: 160px;
+  }
+}
+
+/* Classes, people, account */
+.back-link {
+  width: fit-content;
+}
+
+.create-class {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+}
+
+.create-class h2,
+.create-class p {
+  margin: 0;
+}
+
+.row-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.empty-invite {
+  display: grid;
+  gap: 10px;
+}
+
+.empty-invite h2,
+.empty-invite p {
+  margin: 0;
+}
+
+.invite-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.invite-card h2,
+.invite-card p {
+  margin: 0;
+}
+
+tr.is-off td {
+  color: var(--muted);
+}
+
+.off-tag {
+  margin-left: 8px;
+}
+
+.account-card {
+  max-width: 560px;
+}
+
+.account-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 20px;
+  margin: 0;
+}
+
+.account-facts dt {
+  color: var(--muted);
+}
+
+.account-facts dd {
+  margin: 0;
+  font-weight: 600;
+}

@@ -1,141 +1,165 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import type { ClassDashboard, ClassInfo } from '../../shared/classes.ts'
+import type { Me } from '../../shared/accounts.ts'
+import type { ClassDashboard, ClassInfo, ClassSummary } from '../../shared/classes.ts'
 import type { Scenario } from '../../shared/scenarios.ts'
-import { archiveScenario, createClass, loadDashboard } from '../api.ts'
-import { loadTrainerKey, saveTrainerKey, type Attempt } from '../history.ts'
+import { archiveScenario, createClass, listClasses, loadDashboard, removeAgent, resetLink, shareLink } from '../api.ts'
+import type { Attempt } from '../history.ts'
 import AttemptTables from './AttemptTables.tsx'
 import CallerAvatar from './CallerAvatar.tsx'
+import { CopyButton, LinkNotice } from './CopyLink.tsx'
+
+export type TrainerSection = 'results' | 'agents' | 'scenarios'
 
 interface Props {
+  user: Me
+  classId: string | null
+  section: TrainerSection
+  onSelect: (classId: string | null, section?: TrainerSection) => void
   onOpen: (attempt: Attempt) => void
-}
-
-export type TrainerSection = 'results' | 'scenarios'
-
-interface ClassPanelProps extends Props {
-  initialSection: TrainerSection
-  onBuild: (trainerKey: string, classInfo: ClassInfo, scenario: Scenario | null) => void
+  onBuild: (classInfo: ClassInfo, scenario: Scenario | null) => void
   onTry: (scenario: Scenario, classInfo: ClassInfo) => void
 }
 
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : '–')
 
-function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      className="secondary small-button"
-      onClick={() => {
-        navigator.clipboard?.writeText(value).then(
-          () => {
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1500)
-          },
-          () => undefined,
-        )
-      }}
-    >
-      {copied ? 'Copied' : 'Copy'}
-    </button>
-  )
-}
+// ---- All classes ----
 
-function ClassSetup({ onKey }: { onKey: (key: string, created?: string) => void }) {
-  const [key, setKey] = useState('')
+function ClassList({ user, onSelect }: Pick<Props, 'user' | 'onSelect'>) {
+  const [classes, setClasses] = useState<ClassSummary[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const isAdmin = user.role === 'admin'
+
+  useEffect(() => {
+    let cancelled = false
+    listClasses().then(
+      (list) => !cancelled && setClasses(list),
+      (err) => !cancelled && setError(err instanceof Error ? err.message : 'Could not load classes.'),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const create = async (e: FormEvent) => {
     e.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      const { trainerKey } = await createClass(name)
-      onKey(trainerKey, trainerKey)
+      const created = await createClass(name)
+      onSelect(created.id, 'agents')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the class.')
-    } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="setup-grid">
-      <form
-        className="card setup-card"
-        onSubmit={(e) => {
-          e.preventDefault()
-          onKey(key.trim())
-        }}
-      >
-        <h2>Open your class</h2>
-        <p className="muted small">Enter the trainer key you got when you created the class.</p>
-        <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="Trainer key" autoComplete="off" />
-        <button className="primary" type="submit" disabled={!key.trim()}>
-          Open dashboard
-        </button>
-      </form>
-
-      <form className="card setup-card" onSubmit={create}>
-        <h2>Create a class</h2>
-        <p className="muted small">
-          For example, one certification class. You'll get a class code for agents and a private trainer key.
-        </p>
+    <>
+      <form className="card create-class" onSubmit={create}>
+        <div>
+          <h2>Start a new class</h2>
+          <p className="muted small">For example, one certification class. Agents join it with a code.</p>
+        </div>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. October certification, group B"
           maxLength={120}
+          aria-label="Class name"
         />
         <button className="primary" type="submit" disabled={!name.trim() || busy}>
           {busy ? 'Creating…' : 'Create class'}
         </button>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
       </form>
-    </div>
+
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+
+      <section className="card">
+        <h2>{isAdmin ? 'All classes' : 'Your classes'}</h2>
+        {!classes ? (
+          <p className="muted">Loading…</p>
+        ) : classes.length === 0 ? (
+          <p className="muted">No classes yet. Create one above, then share its code with your agents.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Class</th>
+                  <th>Code</th>
+                  {isAdmin && <th>Trainer</th>}
+                  <th className="num">Agents</th>
+                  <th className="num">Calls</th>
+                  <th>Last call</th>
+                  <th>
+                    <span className="sr-only">Open</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {classes.map((c) => (
+                  <tr key={c.id}>
+                    <td>
+                      <strong>{c.name}</strong>
+                    </td>
+                    <td>
+                      <code>{c.classCode}</code>
+                    </td>
+                    {isAdmin && <td>{c.trainerName ?? '–'}</td>}
+                    <td className="num">{c.agentCount}</td>
+                    <td className="num">{c.callCount}</td>
+                    <td>{when(c.lastCallAt)}</td>
+                    <td>
+                      <button className="secondary small-button" onClick={() => onSelect(c.id)}>
+                        Open
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </>
   )
 }
 
-function ClassPanel({ onOpen, initialSection, onBuild, onTry }: ClassPanelProps) {
-  const [trainerKey, setTrainerKey] = useState(loadTrainerKey)
-  const [newKey, setNewKey] = useState<string | null>(null)
-  const [dashboard, setDashboard] = useState<ClassDashboard | null>(null)
-  const [loading, setLoading] = useState(() => !!trainerKey)
-  const [error, setError] = useState<string | null>(null)
-  const [agent, setAgent] = useState('all')
-  const [section, setSection] = useState<TrainerSection>(initialSection)
+// ---- One class ----
 
-  const refresh = useCallback(async (key: string) => {
+function ClassPanel({ classId, section, onSelect, onOpen, onBuild, onTry }: Omit<Props, 'user'> & { classId: string }) {
+  const [dashboard, setDashboard] = useState<ClassDashboard | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      setDashboard(await loadDashboard(key))
+      setDashboard(await loadDashboard(classId))
     } catch (err) {
-      setDashboard(null)
       setError(err instanceof Error ? err.message : 'Could not load the class.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [classId])
 
-  // Load the dashboard whenever the trainer key changes.
   useEffect(() => {
-    if (!trainerKey) return
     let cancelled = false
-    loadDashboard(trainerKey).then(
+    loadDashboard(classId).then(
       (data) => {
         if (cancelled) return
         setDashboard(data)
-        setError(null)
         setLoading(false)
       },
       (err) => {
         if (cancelled) return
-        setDashboard(null)
         setError(err instanceof Error ? err.message : 'Could not load the class.')
         setLoading(false)
       },
@@ -143,139 +167,247 @@ function ClassPanel({ onOpen, initialSection, onBuild, onTry }: ClassPanelProps)
     return () => {
       cancelled = true
     }
-  }, [trainerKey])
+  }, [classId])
 
-  const forget = () => {
-    saveTrainerKey(null)
-    setTrainerKey('')
-    setDashboard(null)
-    setNewKey(null)
-    setError(null)
-  }
-
-  if (!trainerKey) {
-    return (
-      <ClassSetup
-        onKey={(key, created) => {
-          saveTrainerKey(key)
-          setNewKey(created ?? null)
-          setLoading(true)
-          setTrainerKey(key)
-        }}
-      />
-    )
-  }
+  const back = (
+    <button className="link back-link" onClick={() => onSelect(null)}>
+      ← All classes
+    </button>
+  )
 
   if (!dashboard) {
     return (
-      <div className="card">
-        {loading ? (
-          <p className="muted">Loading class…</p>
-        ) : (
-          <>
-            <p className="error" role="alert">
-              {error}
-            </p>
-            <div className="composer-actions">
-              <button className="secondary" onClick={forget}>
-                Use a different key
-              </button>
-              <button className="primary" onClick={() => void refresh(trainerKey)}>
+      <>
+        {back}
+        <div className="card">
+          {loading ? (
+            <p className="muted">Loading class…</p>
+          ) : (
+            <>
+              <p className="error" role="alert">
+                {error}
+              </p>
+              <button className="primary" onClick={() => void refresh()}>
                 Try again
               </button>
-            </div>
-          </>
-        )}
-      </div>
+            </>
+          )}
+        </div>
+      </>
     )
   }
 
-  const { classInfo, attempts } = dashboard
-  const agents = [...new Set(attempts.map((a) => a.agentName))].sort()
-  const shown = agent === 'all' ? attempts : attempts.filter((a) => a.agentName === agent)
+  const { classInfo, agents, scenarios } = dashboard
+  const signupLink = shareLink('join', classInfo.classCode)
+  const setSection = (s: TrainerSection) => onSelect(classId, s)
 
   return (
     <>
-      {newKey && (
-        <div className="card key-card" role="status">
-          <h2>Class created. Save your trainer key now.</h2>
-          <p className="small">
-            This key opens the dashboard and is shown only once. Anyone with it can see this class's calls, so keep it
-            private.
-          </p>
-          <div className="key-row">
-            <code>{newKey}</code>
-            <CopyButton value={newKey} />
-          </div>
-        </div>
-      )}
-
+      {back}
       <div className="card class-summary">
         <div>
           <p className="eyebrow">Class</p>
           <h2>{classInfo.name}</h2>
           <div className="key-row">
-            <span className="muted small">Class code for agents:</span>
+            <span className="muted small">Class code:</span>
             <code className="class-code">{classInfo.classCode}</code>
             <CopyButton value={classInfo.classCode} />
+            <CopyButton value={signupLink} label="Copy sign-up link" />
           </div>
+          <p className="muted small">
+            New agents open the sign-up link (or click "Create your account" and type the code).
+          </p>
         </div>
-        <div className="history-filters">
-          <button className="secondary" onClick={() => void refresh(trainerKey)} disabled={loading}>
-            {loading ? 'Refreshing…' : 'Refresh'}
-          </button>
-          <button className="link" onClick={forget}>
-            Switch class
-          </button>
-        </div>
+        <button className="secondary" onClick={() => void refresh()} disabled={loading}>
+          {loading ? 'Refreshing…' : 'Refresh'}
+        </button>
       </div>
 
       <div className="tabs big-tabs" role="tablist">
         <button role="tab" aria-selected={section === 'results'} onClick={() => setSection('results')}>
           Results
         </button>
+        <button role="tab" aria-selected={section === 'agents'} onClick={() => setSection('agents')}>
+          Agents ({agents.length})
+        </button>
         <button role="tab" aria-selected={section === 'scenarios'} onClick={() => setSection('scenarios')}>
-          Scenarios ({dashboard.scenarios.filter((s) => !s.archived).length})
+          Scenarios ({scenarios.filter((s) => !s.archived).length})
         </button>
       </div>
 
-      {section === 'scenarios' ? (
+      {section === 'results' && <ResultsPanel dashboard={dashboard} onOpen={onOpen} />}
+      {section === 'agents' && (
+        <AgentsPanel dashboard={dashboard} signupLink={signupLink} onChanged={() => void refresh()} />
+      )}
+      {section === 'scenarios' && (
         <ScenariosPanel
           dashboard={dashboard}
-          trainerKey={trainerKey}
           onChanged={(updated) =>
             setDashboard({
               ...dashboard,
               scenarios: dashboard.scenarios.map((s) => (s.id === updated.id ? updated : s)),
             })
           }
-          onBuild={(scenario) => onBuild(trainerKey, classInfo, scenario)}
+          onBuild={(scenario) => onBuild(classInfo, scenario)}
           onTry={(scenario) => onTry(scenario, classInfo)}
         />
-      ) : shown.length === 0 && agent === 'all' ? (
-        <p className="card empty">
-          No scored calls yet. Give agents the class code {classInfo.classCode}. They type it on the Practice page.
+      )}
+    </>
+  )
+}
+
+function ResultsPanel({ dashboard, onOpen }: { dashboard: ClassDashboard; onOpen: (attempt: Attempt) => void }) {
+  const [agent, setAgent] = useState('all')
+  const { attempts, classInfo } = dashboard
+  const agents = [...new Set(attempts.map((a) => a.agentName))].sort()
+  const shown = agent === 'all' ? attempts : attempts.filter((a) => a.agentName === agent)
+
+  if (attempts.length === 0) {
+    return (
+      <p className="card empty">
+        No scored calls yet. Once agents in {classInfo.name} practice, their scores show up here.
+      </p>
+    )
+  }
+  return (
+    <>
+      <label className="agent-filter">
+        <span className="small muted">Show</span>
+        <select value={agent} onChange={(e) => setAgent(e.target.value)}>
+          <option value="all">All agents ({agents.length})</option>
+          {agents.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <AttemptTables attempts={shown} onOpen={onOpen} showAgents={agent === 'all'} customScenarios={dashboard.scenarios} />
+    </>
+  )
+}
+
+function AgentsPanel({
+  dashboard,
+  signupLink,
+  onChanged,
+}: {
+  dashboard: ClassDashboard
+  signupLink: string
+  onChanged: () => void
+}) {
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [reset, setReset] = useState<{ name: string; link: string } | null>(null)
+  const { agents, attempts, classInfo } = dashboard
+
+  const makeReset = async (id: string, name: string) => {
+    setBusyId(id)
+    setError(null)
+    try {
+      setReset({ name, link: await resetLink(id) })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not make a reset link.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const remove = async (id: string, name: string) => {
+    if (!confirm(`Remove ${name} from ${classInfo.name}? Their past calls stay in the results.`)) return
+    setBusyId(id)
+    setError(null)
+    try {
+      await removeAgent(classInfo.id, id)
+      onChanged()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove the agent.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <>
+      {reset && (
+        <LinkNotice
+          title={`Reset link for ${reset.name}`}
+          text="Send this link to the agent. It lets them set a new password, works once, and expires in 7 days."
+          link={reset.link}
+          onClose={() => setReset(null)}
+        />
+      )}
+      {error && (
+        <p className="error" role="alert">
+          {error}
         </p>
+      )}
+      {agents.length === 0 ? (
+        <div className="card empty-invite">
+          <h2>No agents yet</h2>
+          <p className="muted">Send agents this link. They make an account and land in {classInfo.name}.</p>
+          <div className="key-row">
+            <code>{signupLink}</code>
+            <CopyButton value={signupLink} label="Copy link" />
+          </div>
+        </div>
       ) : (
-        <>
-          <label className="agent-filter">
-            <span className="small muted">Show</span>
-            <select value={agent} onChange={(e) => setAgent(e.target.value)}>
-              <option value="all">All agents ({agents.length})</option>
-              {agents.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <AttemptTables
-            attempts={shown}
-            onOpen={onOpen}
-            showAgents={agent === 'all'}
-            customScenarios={dashboard.scenarios}
-          />
-        </>
+        <section className="card">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th>Email</th>
+                  <th className="num">Calls</th>
+                  <th className="num">Avg score</th>
+                  <th>Last active</th>
+                  <th>
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {agents.map((a) => {
+                  const calls = attempts.filter((c) => c.userId === a.id)
+                  const avg = calls.length
+                    ? Math.round(calls.reduce((n, c) => n + c.scorecard.overall_score, 0) / calls.length)
+                    : null
+                  return (
+                    <tr key={a.id}>
+                      <td>
+                        <strong>{a.name}</strong>
+                        {a.disabled && <span className="muted small"> · turned off</span>}
+                      </td>
+                      <td>{a.email}</td>
+                      <td className="num">{calls.length}</td>
+                      <td className="num">{avg ?? '–'}</td>
+                      <td>{when(a.lastSeenAt)}</td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            className="secondary small-button"
+                            disabled={busyId === a.id}
+                            onClick={() => void makeReset(a.id, a.name)}
+                          >
+                            Reset password
+                          </button>
+                          <button
+                            className="link muted-link"
+                            disabled={busyId === a.id}
+                            onClick={() => void remove(a.id, a.name)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
     </>
   )
@@ -283,13 +415,11 @@ function ClassPanel({ onOpen, initialSection, onBuild, onTry }: ClassPanelProps)
 
 function ScenariosPanel({
   dashboard,
-  trainerKey,
   onChanged,
   onBuild,
   onTry,
 }: {
   dashboard: ClassDashboard
-  trainerKey: string
   onChanged: (scenario: Scenario) => void
   onBuild: (scenario: Scenario | null) => void
   onTry: (scenario: Scenario) => void
@@ -301,7 +431,7 @@ function ScenariosPanel({
     setBusyId(scenario.id)
     setError(null)
     try {
-      onChanged(await archiveScenario(trainerKey, scenario.id, !scenario.archived))
+      onChanged(await archiveScenario(dashboard.classInfo.id, scenario.id, !scenario.archived))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update the scenario.')
     } finally {
@@ -375,17 +505,21 @@ function ScenariosPanel({
   )
 }
 
-export default function TrainerView({ onOpen, initialSection, onBuild, onTry }: ClassPanelProps) {
+export default function TrainerView(props: Props) {
   return (
     <div className="history">
       <div className="page-head with-photo">
         <div>
-          <h1>Trainer</h1>
-          <p className="muted">See how your class is doing and make practice calls for them.</p>
+          <h1>Classes</h1>
+          <p className="muted">See how each class is doing, manage agents, and make practice calls for them.</p>
         </div>
         <img className="head-photo" src="/photos/agents-team.webp" alt="" width={800} height={1199} />
       </div>
-      <ClassPanel onOpen={onOpen} initialSection={initialSection} onBuild={onBuild} onTry={onTry} />
+      {props.classId ? (
+        <ClassPanel key={props.classId} {...props} classId={props.classId} />
+      ) : (
+        <ClassList user={props.user} onSelect={props.onSelect} />
+      )}
     </div>
   )
 }

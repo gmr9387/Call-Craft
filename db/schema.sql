@@ -71,3 +71,61 @@ create index if not exists ai_usage_created_idx on ai_usage (created_at);
 create index if not exists ai_usage_client_idx on ai_usage (client_hash, created_at);
 
 alter table ai_usage enable row level security;
+
+-- ---- Accounts ----
+-- People who use CallCraft. Admins manage trainers; trainers run classes; agents practice.
+-- Passwords are stored as scrypt hashes, never as text.
+create table if not exists users (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique check (email = lower(email) and char_length(email) between 3 and 254),
+  name text not null check (char_length(name) between 1 and 120),
+  role text not null check (role in ('admin', 'trainer', 'agent')),
+  password_hash text not null,
+  -- The class an agent is in (agents are in one class at a time).
+  class_id uuid references classes (id) on delete set null,
+  disabled boolean not null default false,
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz
+);
+
+create index if not exists users_class_idx on users (class_id);
+
+-- Signed-in browsers. Only a SHA-256 of the session token is stored.
+create table if not exists sessions (
+  token_hash text primary key,
+  user_id uuid not null references users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+
+create index if not exists sessions_user_idx on sessions (user_id);
+
+-- One-time links: invites for new trainers and admins, and password resets.
+create table if not exists account_links (
+  token_hash text primary key,
+  kind text not null check (kind in ('invite', 'reset')),
+  role text check (role in ('admin', 'trainer')),
+  user_id uuid references users (id) on delete cascade,
+  created_by uuid references users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  used_at timestamptz
+);
+
+alter table users enable row level security;
+alter table sessions enable row level security;
+alter table account_links enable row level security;
+
+-- Classes belong to a trainer account; calls belong to the person who made them.
+-- Trainer keys are no longer used.
+alter table classes add column if not exists trainer_id uuid references users (id) on delete set null;
+alter table classes alter column trainer_key_hash drop not null;
+alter table attempts add column if not exists user_id uuid references users (id) on delete set null;
+alter table attempts alter column class_id drop not null;
+create index if not exists attempts_user_created_idx on attempts (user_id, created_at desc);
+create index if not exists classes_trainer_idx on classes (trainer_id);
+
+-- Failed sign-in attempts are counted with the same log as AI usage.
+alter table ai_usage drop constraint if exists ai_usage_kind_check;
+alter table ai_usage add constraint ai_usage_kind_check
+  check (kind in ('reply', 'score', 'draft', 'health', 'signin'));

@@ -16,7 +16,7 @@ function apiDevServer(): Plugin {
     configureServer(server: ViteDevServer) {
       server.middlewares.use('/api', async (req, res, next) => {
         const name = req.url?.replace(/^\//, '').split('?')[0]
-        if (!name || !['coach', 'classes', 'scenarios', 'health'].includes(name)) return next()
+        if (!name || !['auth', 'calls', 'classes', 'coach', 'health', 'people', 'scenarios'].includes(name)) return next()
         const mod = await server.ssrLoadModule(`/api/${name}.ts`)
         const handler = req.method === 'POST' ? mod.POST : req.method === 'GET' ? mod.GET : undefined
         if (!handler) {
@@ -24,14 +24,21 @@ function apiDevServer(): Plugin {
           res.end()
           return
         }
+        const headers = new Headers()
+        for (const key of ['content-type', 'cookie']) {
+          const value = req.headers[key]
+          if (typeof value === 'string') headers.set(key, value)
+        }
         const request = new Request(`http://localhost/api/${name}`, {
           method: req.method,
-          headers: { 'content-type': 'application/json' },
+          headers,
           body: req.method === 'POST' ? await readBody(req) : undefined,
         })
         const response: Response = await handler(request)
         res.statusCode = response.status
         res.setHeader('content-type', response.headers.get('content-type') ?? 'application/json')
+        const cookie = response.headers.get('set-cookie')
+        if (cookie) res.setHeader('set-cookie', cookie)
         res.end(await response.text())
       })
     },
