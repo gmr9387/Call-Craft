@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 
 const YEAR = new Date().getFullYear()
 
-// Marketing photos live in public/photos. Until a file is added, its spot stays hidden.
 const HERO_PHOTO = '/photos/marketing-hero.webp'
 const TEAM_PHOTO = '/photos/marketing-team.webp'
 
@@ -11,71 +10,51 @@ interface Props {
   onPrivacy: () => void
 }
 
-const FACTS = ['Built for contact center training teams', 'Scored the moment the call ends', 'No real customer data']
-
-const BENEFITS = [
+// The page reads like a magazine feature: a cover photo, a short introduction, then a few
+// numbered chapters in large type, a pull quote, and a closing line.
+const CHAPTERS = [
   {
-    icon: '⏱',
-    title: 'Ready sooner',
-    text: 'Agents practice as many calls as they need before going live, instead of learning on real customers.',
+    title: 'Agents practice with an AI caller.',
+    text: 'Friendly, rushed, upset, or confused. Each practice call has a different person on the other end, and they react to exactly what the agent says. Agents can type or talk, and try again as many times as they need.',
   },
   {
-    icon: '🛡',
-    title: 'Fewer rule-breaking calls',
-    text: 'Mistakes like ignoring "don’t call me" or quoting prices get caught in practice, not on a live call.',
+    title: 'Every call is scored the same way.',
+    text: 'The moment a call ends, the agent gets a scorecard: each step of the call, every rule, and people skills like tone and empathy, with tips on what to say next time. Mistakes like quoting a price or ignoring “don’t call me” are caught in practice, not on a live call.',
+    figure: true,
   },
   {
-    icon: '📋',
-    title: 'Coaching that scales',
-    text: 'Every call is scored the same way, so trainers spend their time where agents actually struggle.',
+    title: 'Trainers see who’s ready.',
+    text: 'Every agent’s scores in one place, the step each one misses most, and a clear “Ready for live calls” once they’ve passed the calls that matter. Trainers can leave a note on any call, or correct a score.',
   },
   {
-    icon: '✓',
-    title: 'Safe to fail',
-    text: 'Every caller is made up. Agents can try, miss, and try again without any risk to a real customer.',
+    title: 'Any program, no developers.',
+    text: 'Describe a call in a few sentences and CallCraft writes the steps and the rules. A small training team sets up programs, classes, and people on its own.',
   },
-]
-
-const STEPS = [
-  { title: 'Pick a call', text: 'Friendly, rushed, upset, or confused. Each practice call has a different caller.' },
-  { title: 'Talk it through', text: 'Agents type or speak. The AI caller reacts to what they say, like a real person.' },
-  { title: 'Get a score', text: 'Every step, every rule, and people skills, with tips on what to say next time.' },
-]
-
-const TRAINER_POINTS = [
-  'See every agent’s scores and the step each one misses most.',
-  'Describe a caller in one sentence and CallCraft writes the practice call.',
-  'Calls that break the rules are flagged, so you can coach early.',
 ]
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 // Counts up to the value once `start` is true (instantly when motion is reduced).
-function CountUp({ to, start, delayMs }: { to: number; start: boolean; delayMs: number }) {
+function CountUp({ to, start }: { to: number; start: boolean }) {
   const [value, setValue] = useState(0)
   const instant = start && reducedMotion()
   useEffect(() => {
     if (!start || instant) return
     let frame = 0
-    const timer = setTimeout(() => {
-      const began = performance.now()
-      const tick = (now: number) => {
-        const t = Math.min(1, (now - began) / 900)
-        setValue(Math.round(to * (1 - Math.pow(1 - t, 3))))
-        if (t < 1) frame = requestAnimationFrame(tick)
-      }
-      frame = requestAnimationFrame(tick)
-    }, delayMs)
-    return () => {
-      clearTimeout(timer)
-      cancelAnimationFrame(frame)
+    const began = performance.now()
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - began) / 1100)
+      setValue(Math.round(to * (1 - Math.pow(1 - t, 3))))
+      if (t < 1) frame = requestAnimationFrame(tick)
     }
-  }, [to, start, instant, delayMs])
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [to, start, instant])
   return <>{instant ? to : value}</>
 }
 
 // Marks [data-reveal] elements with data-shown as they scroll into view (CSS does the animation).
-function useScrollReveal(onPreviewShown: () => void) {
+function useScrollReveal(onFigureShown: () => void) {
   const rootRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const root = rootRef.current
@@ -83,7 +62,7 @@ function useScrollReveal(onPreviewShown: () => void) {
     const targets = root.querySelectorAll<HTMLElement>('[data-reveal]')
     if (!('IntersectionObserver' in window)) {
       targets.forEach((el) => el.setAttribute('data-shown', ''))
-      onPreviewShown()
+      onFigureShown()
       return
     }
     const observer = new IntersectionObserver(
@@ -92,7 +71,7 @@ function useScrollReveal(onPreviewShown: () => void) {
           if (!entry.isIntersecting) continue
           const el = entry.target as HTMLElement
           el.setAttribute('data-shown', '')
-          if (el.classList.contains('mk-preview')) onPreviewShown()
+          if (el.classList.contains('mag-figure')) onFigureShown()
           observer.unobserve(el)
         }
       },
@@ -100,143 +79,104 @@ function useScrollReveal(onPreviewShown: () => void) {
     )
     targets.forEach((el) => observer.observe(el))
     return () => observer.disconnect()
-  }, [onPreviewShown])
+  }, [onFigureShown])
   return rootRef
 }
 
-const delay = (i: number) => ({ '--reveal-delay': `${i * 0.1}s` }) as CSSProperties
-
-function Photo({ src, className, ...rest }: { src: string; className: string; 'data-reveal'?: boolean }) {
-  const [missing, setMissing] = useState(false)
-  if (missing) return null
-  return <img className={className} src={src} alt="" onError={() => setMissing(true)} {...rest} />
-}
+const delay = (i: number) => ({ '--reveal-delay': `${i * 0.12}s` }) as CSSProperties
 
 export default function Marketing({ onSignIn, onPrivacy }: Props) {
-  const [previewShown, setPreviewShown] = useState(false)
-  const [showPreview] = useState(() => () => setPreviewShown(true))
-  const rootRef = useScrollReveal(showPreview)
+  const [figureShown, setFigureShown] = useState(false)
+  const [showFigure] = useState(() => () => setFigureShown(true))
+  const rootRef = useScrollReveal(showFigure)
 
   return (
-    <div className="marketing" ref={rootRef}>
-      <header className="mk-nav">
-        <span className="brand">
-          <span className="brand-mark" aria-hidden>
-            ◉
-          </span>{' '}
-          CallCraft
-        </span>
+    <div className="mag" ref={rootRef}>
+      <header className="mag-nav">
+        <span className="mag-brand">CallCraft</span>
         <nav>
-          <a href="#why">Why CallCraft</a>
-          <a href="#how">How it works</a>
-          <a href="#trainers">For trainers</a>
-          <button className="primary" onClick={onSignIn}>
-            Sign in
+          <a href="#story">The idea</a>
+          <a href="#chapters">How it works</a>
+          <button className="link mag-signin" onClick={onSignIn}>
+            Sign in →
           </button>
         </nav>
       </header>
 
-      <section className="mk-hero">
-        <div className="mk-hero-text">
-          <p className="eyebrow">Agent training for contact centers</p>
-          <h1>Practice calls before the real ones.</h1>
-          <p className="mk-lead">
-            Agents talk to an AI caller and get scored the moment they hang up. Trainers see the whole class in one
-            place.
-          </p>
-          <div className="mk-cta">
-            <button className="primary big" onClick={onSignIn}>
-              Sign in
-            </button>
-            <a className="secondary big as-button" href="#how">
-              How it works
-            </a>
-          </div>
-        </div>
-
-        <div className="mk-hero-visual">
-          <Photo src={HERO_PHOTO} className="mk-hero-photo" />
-        </div>
-      </section>
-
-      <ul className="mk-facts" data-reveal>
-        {FACTS.map((f) => (
-          <li key={f}>{f}</li>
-        ))}
-      </ul>
-
-      <section id="why" className="mk-section">
-        <h2 data-reveal>Why CallCraft</h2>
-        <div className="mk-benefits">
-          {BENEFITS.map((b, i) => (
-            <div key={b.title} className="card mk-benefit" data-reveal style={delay(i)}>
-              <span className="mk-benefit-icon" aria-hidden>
-                {b.icon}
-              </span>
-              <h3>{b.title}</h3>
-              <p>{b.text}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section id="how" className="mk-section">
-        <h2 data-reveal>How it works</h2>
-        <div className="mk-how">
-          <ol className="mk-steps">
-            {STEPS.map((s, i) => (
-              <li key={s.title} data-reveal style={delay(i)}>
-                <span className="mk-step-num">{i + 1}</span>
-                <div>
-                  <h3>{s.title}</h3>
-                  <p>{s.text}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
-          <div className="mk-preview card" data-reveal aria-label="Example of a practice call and its score">
-            <div className="mk-preview-call">
-              <div className="turn prospect">
-                <span className="who">Caller</span>
-                <p>I've gotten five of these calls this week.</p>
-              </div>
-              <div className="turn agent">
-                <span className="who">Agent</span>
-                <p>I'm sorry about that. I'll take you off our list right now.</p>
-              </div>
-            </div>
-            <div className="mk-preview-score">
-              <span className="mk-score">
-                  <CountUp to={92} start={previewShown} delayMs={1900} />
-                </span>
-              <div>
-                <span className="status status-pass">✓ Pass</span>
-                <p className="small muted">Honored the do-not-call request right away.</p>
-              </div>
-            </div>
-            <p className="small muted mk-example-note">Example</p>
-          </div>
-        </div>
-      </section>
-
-      <section id="trainers" className="mk-section mk-split">
-        <Photo src={TEAM_PHOTO} className="mk-team-photo" data-reveal />
-        <div data-reveal style={delay(1)}>
-          <h2>Built for trainers</h2>
-          <ul className="mk-points">
-            {TRAINER_POINTS.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-          <button className="primary big" onClick={onSignIn}>
+      <section className="mag-cover" aria-label="CallCraft">
+        <img src={HERO_PHOTO} alt="" className="mag-cover-photo" />
+        <div className="mag-cover-text">
+          <p className="mag-kicker">Agent training for contact centers</p>
+          <h1>
+            Practice calls
+            <br />
+            before the real ones.
+          </h1>
+          <button className="mag-cover-button" onClick={onSignIn}>
             Sign in
           </button>
         </div>
       </section>
 
-      <footer className="mk-footer">
-        <span className="muted small">© {YEAR} CallCraft · Practice callers are made up. No real customer data.</span>
-        <span className="mk-footer-links">
+      <section id="story" className="mag-intro" data-reveal>
+        <p className="mag-lead">
+          <span className="mag-dropcap">N</span>ew agents usually learn on real customers. Every missed step, every
+          quoted price, every “please stop calling me” that gets ignored happens on a live call.
+        </p>
+        <p>
+          CallCraft gives agents somewhere safe to get it wrong first. They practice with an AI caller, get scored the
+          moment they hang up, and practice again, until they’re ready.
+        </p>
+      </section>
+
+      <section id="chapters" className="mag-chapters" aria-label="How it works">
+        {CHAPTERS.map((c, i) => (
+          <article key={c.title} className="mag-chapter" data-reveal style={delay(0)}>
+            <span className="mag-number" aria-hidden>
+              {String(i + 1).padStart(2, '0')}
+            </span>
+            <div className="mag-chapter-body">
+              <h2>{c.title}</h2>
+              <p>{c.text}</p>
+              {c.figure && (
+                <figure className="mag-figure" data-reveal style={delay(1)}>
+                  <div className="mag-scorecard">
+                    <span className="mag-score">
+                      <CountUp to={92} start={figureShown} />
+                    </span>
+                    <div>
+                      <span className="status status-pass">✓ Pass</span>
+                      <p className="small">Honored the do-not-call request right away.</p>
+                    </div>
+                  </div>
+                  <figcaption>An example score. Every call gets one the moment it ends.</figcaption>
+                </figure>
+              )}
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <blockquote className="mag-quote" data-reveal>
+        <p>“The mistakes get made in practice, not on a live call.”</p>
+      </blockquote>
+
+      <figure className="mag-band" data-reveal>
+        <img src={TEAM_PHOTO} alt="" />
+        <figcaption>Every practice caller is made up. No real customer data, ever.</figcaption>
+      </figure>
+
+      <section className="mag-closing" data-reveal>
+        <h2>Ready when your agents are.</h2>
+        <p>Trainers set up a class in about ten minutes. Agents join with a link.</p>
+        <button className="primary big" onClick={onSignIn}>
+          Sign in
+        </button>
+      </section>
+
+      <footer className="mag-footer">
+        <span>© {YEAR} CallCraft · Practice callers are made up. No real customer data.</span>
+        <span className="mag-footer-links">
           <button className="link" onClick={onPrivacy}>
             Privacy and terms
           </button>

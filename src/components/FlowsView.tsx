@@ -304,7 +304,7 @@ export function FlowBuilder({ flow, copy = false, onDone }: BuilderProps) {
             <ol className="flow-steps">
               {fields.steps.map((step, i) => (
                 <li key={i} className="flow-step">
-                  <span className="mk-step-num">{i + 1}</span>
+                  <span className="step-num">{i + 1}</span>
                   <div className="flow-step-fields">
                     <input
                       value={step.label}
