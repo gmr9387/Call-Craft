@@ -21,6 +21,8 @@ export interface AuthStatus {
   user: Me | null;
   // True only before the first (admin) account exists.
   needsSetup: boolean;
+  // For trainers and admins: what went wrong if the AI stopped working in the last hour.
+  aiProblem?: string | null;
 }
 
 // What a one-time link is for, shown before the person uses it.

@@ -209,6 +209,20 @@ export async function listPeople(): Promise<Person[]> {
   }));
 }
 
+export async function updatePerson(userId: string, fields: { name: string; email: string }): Promise<boolean> {
+  try {
+    const rows = await db()`
+      update users set name = ${fields.name}, email = ${fields.email} where id = ${userId} returning id
+    `;
+    return rows.length > 0;
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") {
+      throw new AccountInputError("Another account already uses that email.");
+    }
+    throw error;
+  }
+}
+
 // Turning an account off also signs it out everywhere.
 export async function setDisabled(userId: string, disabled: boolean): Promise<boolean> {
   const rows = await db()`update users set disabled = ${disabled} where id = ${userId} returning id`;

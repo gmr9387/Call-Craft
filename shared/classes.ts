@@ -1,5 +1,6 @@
 import type { Scenario, Turn } from "./scenarios.js";
 import type { ScorecardResult } from "./scorecard.js";
+import type { CallFlow } from "./flows.js";
 
 // A training class (for example, one certification cohort).
 export interface ClassInfo {
@@ -10,7 +11,10 @@ export interface ClassInfo {
 
 // A class in a trainer's (or admin's) class list.
 export interface ClassSummary extends ClassInfo {
+  trainerId: string | null;
   trainerName: string | null;
+  flowName: string;
+  archived: boolean;
   agentCount: number;
   callCount: number;
   lastCallAt: string | null;
@@ -45,10 +49,15 @@ export interface ClassDashboard {
   // Trainer-built scenarios for this class, including archived ones.
   scenarios: Scenario[];
   agents: ClassAgent[];
+  flow: CallFlow;
+  trainerId: string | null;
+  archived: boolean;
 }
 
 export interface JoinResult {
   classInfo: ClassInfo;
   // Active trainer-built scenarios agents in this class can practice.
   scenarios: Scenario[];
+  // The call flow the class practices.
+  flow: CallFlow;
 }

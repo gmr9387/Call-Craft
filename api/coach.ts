@@ -1,6 +1,8 @@
 import { canManageClass, requireUser, type User } from "../server/auth.js";
 import { prospectReply, scoreCall } from "../server/coach.js";
 import { classById, saveAttempt, scenarioWithClass } from "../server/db.js";
+import { flowForClass } from "../server/flows.js";
+import { BUILTIN_FLOW, type CallFlow } from "../shared/flows.js";
 import { errorResponse, json, readJson } from "../server/http.js";
 import { checkUsage } from "../server/limits.js";
 import { getScenario, isCustomScenarioId, type Scenario, type Turn } from "../shared/scenarios.js";
@@ -26,16 +28,20 @@ function parseTranscript(value: unknown): Turn[] | null {
   return turns;
 }
 
-// Built-in scenarios resolve by slug. A trainer-built scenario can be used by agents in its
-// class, and by the trainers and admins who manage that class.
-async function resolveScenario(user: User, scenarioId: unknown): Promise<Scenario | null> {
+// Built-in scenarios resolve by slug and use the built-in sample flow. A trainer-built scenario
+// uses its class's call flow, and can be used by agents in that class and by the trainers and
+// admins who manage it.
+async function resolveScenario(user: User, scenarioId: unknown): Promise<{ scenario: Scenario; flow: CallFlow } | null> {
   if (typeof scenarioId !== "string") return null;
-  if (!isCustomScenarioId(scenarioId)) return getScenario(scenarioId) ?? null;
+  if (!isCustomScenarioId(scenarioId)) {
+    const scenario = getScenario(scenarioId);
+    return scenario ? { scenario, flow: BUILTIN_FLOW } : null;
+  }
   const found = await scenarioWithClass(scenarioId);
   if (!found) return null;
   const allowed =
     (user.role === "agent" && user.classId === found.classId) || (await canManageClass(user, found.classId));
-  return allowed ? found.scenario : null;
+  return allowed ? { scenario: found.scenario, flow: await flowForClass(found.classId) } : null;
 }
 
 // Simulator endpoint: the AI prospect's next line, or the call scorecard.
@@ -51,20 +57,21 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const user = await requireUser(request);
-    const scenario = await resolveScenario(user, body.scenarioId);
-    if (!scenario) return json({ error: "Unknown scenario." }, 400);
+    const resolved = await resolveScenario(user, body.scenarioId);
+    if (!resolved) return json({ error: "Unknown scenario." }, 400);
+    const { scenario, flow } = resolved;
     const classId = user.role === "agent" ? user.classId : null;
 
     if (body.action === "reply") {
       await checkUsage("reply", request, null, user.id);
-      return json({ text: await prospectReply(scenario, transcript) });
+      return json({ text: await prospectReply(scenario, flow, transcript) });
     }
     if (body.action !== "score") {
       return json({ error: "Unknown action." }, 400);
     }
 
     await checkUsage("score", request, null, user.id);
-    const scorecard = await scoreCall(scenario, transcript);
+    const scorecard = await scoreCall(scenario, flow, transcript);
     if (body.save === false) {
       return json({ scorecard, saved: false });
     }

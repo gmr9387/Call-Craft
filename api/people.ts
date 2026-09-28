@@ -1,6 +1,9 @@
 import {
   AuthError,
   canManageClass,
+  cleanEmail,
+  cleanName,
+  updatePerson,
   createInvite,
   createResetLink,
   listPeople,
@@ -16,6 +19,7 @@ const NOT_FOUND = "That person wasn't found.";
 // - "list" (admins): every account
 // - "invite" (admins): a one-time link for a new trainer or admin to create their account
 // - "reset-link" (admins; trainers for agents in their classes): a one-time link to set a new password
+// - "update" (admins; trainers for agents in their classes): fix someone's name or email
 // - "disable" (admins): turn an account off or back on
 // Links are returned as tokens; the browser turns them into full links to copy.
 export async function POST(request: Request): Promise<Response> {
@@ -34,17 +38,20 @@ export async function POST(request: Request): Promise<Response> {
         if (!role) return json({ error: "Choose trainer or admin." }, 400);
         return json({ token: await createInvite(admin.id, role) });
       }
-      case "reset-link": {
+      case "reset-link":
+      case "update": {
         const user = await requireUser(request, "admin", "trainer");
         const targetId = cleanId(body.userId);
         const target = targetId ? await userById(targetId) : null;
         if (!target) return json({ error: NOT_FOUND }, 404);
-        // Trainers can reset only agents in a class they run.
+        // Trainers can help only agents in a class they run.
         const allowed =
           user.role === "admin" ||
           (target.role === "agent" && !!target.classId && (await canManageClass(user, target.classId)));
-        if (!allowed) throw new AuthError("You can only reset passwords for agents in your classes.", 403);
-        return json({ token: await createResetLink(user.id, target.id) });
+        if (!allowed) throw new AuthError("You can only change agents in your classes.", 403);
+        if (body.action === "reset-link") return json({ token: await createResetLink(user.id, target.id) });
+        await updatePerson(target.id, { name: cleanName(body.name), email: cleanEmail(body.email) });
+        return json({ ok: true });
       }
       case "disable": {
         const admin = await requireUser(request, "admin");
