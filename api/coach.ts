@@ -1,7 +1,7 @@
-import { canManageClass, requireUser, type User } from "../server/auth.js";
+import { requireUser, type User } from "../server/auth.js";
 import { prospectReply, scoreCall } from "../server/coach.js";
-import { classById, saveAttempt, scenarioWithClass } from "../server/db.js";
-import { flowForClass } from "../server/flows.js";
+import { classById, purgeOldCalls, resolveFlow, saveAttempt, scenarioWithFlow } from "../server/db.js";
+import { retentionDays } from "../server/settings.js";
 import { BUILTIN_FLOW, type CallFlow } from "../shared/flows.js";
 import { errorResponse, json, readJson } from "../server/http.js";
 import { checkUsage } from "../server/limits.js";
@@ -29,19 +29,21 @@ function parseTranscript(value: unknown): Turn[] | null {
 }
 
 // Built-in scenarios resolve by slug and use the built-in sample flow. A trainer-built scenario
-// uses its class's call flow, and can be used by agents in that class and by the trainers and
-// admins who manage it.
+// uses the call flow it belongs to. Agents can use it when their class is on that flow;
+// trainers and admins can use any (flows and their scenarios are shared by all trainers).
 async function resolveScenario(user: User, scenarioId: unknown): Promise<{ scenario: Scenario; flow: CallFlow } | null> {
   if (typeof scenarioId !== "string") return null;
   if (!isCustomScenarioId(scenarioId)) {
     const scenario = getScenario(scenarioId);
     return scenario ? { scenario, flow: BUILTIN_FLOW } : null;
   }
-  const found = await scenarioWithClass(scenarioId);
+  const found = await scenarioWithFlow(scenarioId);
   if (!found) return null;
-  const allowed =
-    (user.role === "agent" && user.classId === found.classId) || (await canManageClass(user, found.classId));
-  return allowed ? { scenario: found.scenario, flow: await flowForClass(found.classId) } : null;
+  if (user.role === "agent") {
+    const cls = user.classId ? await classById(user.classId) : null;
+    if (!cls || cls.flowId !== found.flowId) return null;
+  }
+  return { scenario: found.scenario, flow: await resolveFlow(found.flowId) };
 }
 
 // Simulator endpoint: the AI prospect's next line, or the call scorecard.
@@ -106,6 +108,11 @@ export async function POST(request: Request): Promise<Response> {
         transcript,
         scorecard,
       });
+      // Now and then, delete calls older than the retention period set on the System page.
+      if (Math.random() < 0.02) {
+        const days = await retentionDays();
+        if (days) await purgeOldCalls(days).catch((error) => console.error("Deleting old calls failed:", error));
+      }
       return json({ scorecard, saved: true, attemptId: id, className: cls?.name ?? null });
     } catch (error) {
       // Never lose the scorecard because the save failed.

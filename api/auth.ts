@@ -19,6 +19,7 @@ import {
   toMe,
   type User,
 } from "../server/auth.js";
+import { logActivity } from "../server/audit.js";
 import { classByCode, isDbConfigured } from "../server/db.js";
 import { cleanText, errorResponse, json, readJson } from "../server/http.js";
 import { checkSigninAllowed, recordSigninFailure } from "../server/limits.js";
@@ -87,6 +88,7 @@ export async function POST(request: Request): Promise<Response> {
         const fields = { name: cleanName(body.name), email: cleanEmail(body.email), password: cleanPassword(body.password) };
         const user = await createFirstAdmin(fields);
         if (!user) return json({ error: "CallCraft is already set up. Sign in instead." }, 409);
+        await logActivity(user, "Set up CallCraft", `first admin: ${user.email}`);
         return signedIn(request, user);
       }
       case "signup": {
@@ -98,7 +100,9 @@ export async function POST(request: Request): Promise<Response> {
           return json({ error: "That class code wasn't found. Check it with your trainer." }, 404);
         }
         const fields = { name: cleanName(body.name), email: cleanEmail(body.email), password: cleanPassword(body.password) };
-        return signedIn(request, await createAgent({ ...fields, classId: cls.id }));
+        const agent = await createAgent({ ...fields, classId: cls.id });
+        await logActivity(agent, "Signed up", `agent in ${cls.name}`);
+        return signedIn(request, agent);
       }
       case "link": {
         await checkSigninAllowed(request);
@@ -111,10 +115,14 @@ export async function POST(request: Request): Promise<Response> {
       }
       case "accept": {
         const fields = { name: cleanName(body.name), email: cleanEmail(body.email), password: cleanPassword(body.password) };
-        return signedIn(request, await acceptInvite(token(body), fields));
+        const invited = await acceptInvite(token(body), fields);
+        await logActivity(invited, "Accepted invite", `${invited.role}: ${invited.email}`);
+        return signedIn(request, invited);
       }
       case "reset": {
-        return signedIn(request, await resetPassword(token(body), cleanPassword(body.password)));
+        const person = await resetPassword(token(body), cleanPassword(body.password));
+        await logActivity(person, "Set a new password", "with a reset link");
+        return signedIn(request, person);
       }
       case "password": {
         const user = await requireUser(request);

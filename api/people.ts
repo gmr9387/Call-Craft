@@ -3,6 +3,7 @@ import {
   canManageClass,
   cleanEmail,
   cleanName,
+  deletePerson,
   updatePerson,
   createInvite,
   createResetLink,
@@ -11,6 +12,7 @@ import {
   setDisabled,
   userById,
 } from "../server/auth.js";
+import { logActivity } from "../server/audit.js";
 import { cleanId, errorResponse, json, readJson } from "../server/http.js";
 
 const NOT_FOUND = "That person wasn't found.";
@@ -21,6 +23,7 @@ const NOT_FOUND = "That person wasn't found.";
 // - "reset-link" (admins; trainers for agents in their classes): a one-time link to set a new password
 // - "update" (admins; trainers for agents in their classes): fix someone's name or email
 // - "disable" (admins): turn an account off or back on
+// - "delete" (admins): delete an account and every practice call it made (for data requests)
 // Links are returned as tokens; the browser turns them into full links to copy.
 export async function POST(request: Request): Promise<Response> {
   const body = await readJson(request);
@@ -36,7 +39,9 @@ export async function POST(request: Request): Promise<Response> {
         const admin = await requireUser(request, "admin");
         const role = body.role === "admin" ? "admin" : body.role === "trainer" ? "trainer" : null;
         if (!role) return json({ error: "Choose trainer or admin." }, 400);
-        return json({ token: await createInvite(admin.id, role) });
+        const token = await createInvite(admin.id, role);
+        await logActivity(admin, "Made invite link", `new ${role}`);
+        return json({ token });
       }
       case "reset-link":
       case "update": {
@@ -49,8 +54,14 @@ export async function POST(request: Request): Promise<Response> {
           user.role === "admin" ||
           (target.role === "agent" && !!target.classId && (await canManageClass(user, target.classId)));
         if (!allowed) throw new AuthError("You can only change agents in your classes.", 403);
-        if (body.action === "reset-link") return json({ token: await createResetLink(user.id, target.id) });
-        await updatePerson(target.id, { name: cleanName(body.name), email: cleanEmail(body.email) });
+        if (body.action === "reset-link") {
+          const token = await createResetLink(user.id, target.id);
+          await logActivity(user, "Made password reset link", `${target.name} (${target.email})`);
+          return json({ token });
+        }
+        const fields = { name: cleanName(body.name), email: cleanEmail(body.email) };
+        await updatePerson(target.id, fields);
+        await logActivity(user, "Edited person", `${target.name} (${target.email}) → ${fields.name} (${fields.email})`);
         return json({ ok: true });
       }
       case "disable": {
@@ -58,7 +69,23 @@ export async function POST(request: Request): Promise<Response> {
         const id = cleanId(body.userId);
         if (!id) return json({ error: NOT_FOUND }, 404);
         if (id === admin.id) return json({ error: "You can't turn off your own account." }, 400);
-        return (await setDisabled(id, body.disabled === true)) ? json({ ok: true }) : json({ error: NOT_FOUND }, 404);
+        const target = await userById(id);
+        if (!target || !(await setDisabled(id, body.disabled === true))) return json({ error: NOT_FOUND }, 404);
+        await logActivity(admin, body.disabled === true ? "Turned off account" : "Turned on account", `${target.name} (${target.email})`);
+        return json({ ok: true });
+      }
+      case "delete": {
+        const admin = await requireUser(request, "admin");
+        const id = cleanId(body.userId);
+        const target = id ? await userById(id) : null;
+        if (!target) return json({ error: NOT_FOUND }, 404);
+        if (target.id === admin.id) return json({ error: "You can't delete your own account." }, 400);
+        // The admin types the person's email to confirm, so a slip of the mouse can't delete anyone.
+        const confirm = typeof body.confirmEmail === "string" ? body.confirmEmail.trim().toLowerCase() : "";
+        if (confirm !== target.email) return json({ error: "Type the person's email exactly to confirm." }, 400);
+        const calls = await deletePerson(target.id);
+        await logActivity(admin, "Deleted person and their data", `${target.name} (${target.email}), ${calls} calls`);
+        return json({ ok: true, calls });
       }
       default:
         return json({ error: "Unknown action." }, 400);

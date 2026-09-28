@@ -223,6 +223,16 @@ export async function updatePerson(userId: string, fields: { name: string; email
   }
 }
 
+// Deletes an account, its sessions and links, and every practice call it made.
+// Returns how many calls were deleted. Classes they ran stay, without a trainer.
+export async function deletePerson(userId: string): Promise<number> {
+  return db().begin(async (tx) => {
+    const calls = await tx`delete from attempts where user_id = ${userId} returning id`;
+    await tx`delete from users where id = ${userId}`;
+    return calls.length;
+  });
+}
+
 // Turning an account off also signs it out everywhere.
 export async function setDisabled(userId: string, disabled: boolean): Promise<boolean> {
   const rows = await db()`update users set disabled = ${disabled} where id = ${userId} returning id`;

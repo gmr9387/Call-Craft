@@ -65,16 +65,6 @@ export async function flowById(id: string): Promise<CallFlow | null> {
   return rows[0] ? toFlow(rows[0]) : null;
 }
 
-// The flow a class uses (the built-in sample when none is set).
-export async function flowForClass(classId: string): Promise<CallFlow> {
-  const rows = await db()<FlowRow[]>`
-    select ${db().unsafe(COLUMNS.split(", ").map((c) => `f.${c}`).join(", "))}
-    from classes c join call_flows f on f.id = c.flow_id
-    where c.id = ${classId}
-  `;
-  return rows[0] ? toFlow(rows[0]) : BUILTIN_FLOW;
-}
-
 export async function createFlow(userId: string, input: FlowInputValue): Promise<CallFlow> {
   const rows = await db()<FlowRow[]>`
     insert into call_flows (name, company, purpose, end_goal, steps, rules, created_by)
