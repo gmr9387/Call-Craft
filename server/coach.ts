@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { env } from "./env.js";
 import {
   CALL_FLOW,
   END_MARKERS,
@@ -11,7 +12,7 @@ import {
 import { Scorecard, type ScorecardResult } from "../shared/scorecard.js";
 import { ScenarioDraft, type ScenarioInputValue } from "../shared/scenarioInput.js";
 
-const MODEL = process.env.CALLCRAFT_MODEL ?? "claude-opus-5";
+const MODEL = env("CALLCRAFT_MODEL") ?? "claude-opus-5";
 
 // Server-side refusal fallback: a declined request is re-run on Anthropic's
 // recommended fallback model inside the same call. It's a beta feature, so if an
@@ -39,10 +40,11 @@ async function withFallback<T>(run: (options: FallbackOptions) => Promise<T>): P
 
 let client: Anthropic | undefined;
 function getClient(): Anthropic {
-  if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
+  const apiKey = env("ANTHROPIC_API_KEY");
+  if (!apiKey && !env("ANTHROPIC_AUTH_TOKEN")) {
     throw new CoachError("The AI service isn't configured yet: set ANTHROPIC_API_KEY on the server.");
   }
-  client ??= new Anthropic();
+  client ??= new Anthropic({ apiKey, authToken: env("ANTHROPIC_AUTH_TOKEN") });
   return client;
 }
 

@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import postgres from "postgres";
+import { env } from "./env.js";
 import type { Scenario, Turn } from "../shared/scenarios.js";
 import type { ScorecardResult } from "../shared/scorecard.js";
 import type { ScenarioInputValue } from "../shared/scenarioInput.js";
@@ -14,7 +15,7 @@ export class DbNotConfiguredError extends Error {
 let sql: postgres.Sql | undefined;
 
 function db(): postgres.Sql {
-  const url = process.env.DATABASE_URL;
+  const url = env("DATABASE_URL");
   if (!url) throw new DbNotConfiguredError();
   // prepare: false keeps this compatible with transaction-mode poolers (Supabase, Neon, PgBouncer).
   sql ??= postgres(url, { prepare: false, max: 3, idle_timeout: 20 });
@@ -26,7 +27,7 @@ export async function pingDb(): Promise<void> {
 }
 
 export function isDbConfigured(): boolean {
-  return !!process.env.DATABASE_URL;
+  return !!env("DATABASE_URL");
 }
 
 // No 0/O or 1/I/L, so codes are easy to read aloud and type.
