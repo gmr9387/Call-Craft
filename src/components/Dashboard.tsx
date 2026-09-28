@@ -56,27 +56,30 @@ export default function Dashboard({
 
       <div className="dash-grid">
         <section className="card next-card">
-          <p className="eyebrow">Next up</p>
-          <h2>{next.title}</h2>
-          <p>{next.focus}</p>
-          {!hasName && (
-            <label className="name-field">
-              <span>Type your name to start</span>
-              <input
-                value={agentName}
-                onChange={(e) => onNameChange(e.target.value)}
-                placeholder="First and last name"
-                autoComplete="name"
-              />
-            </label>
-          )}
-          <div className="card-actions">
-            <button className="primary big" disabled={!hasName} onClick={() => onStart(next)}>
-              Start this call
-            </button>
-            <button className="secondary big" onClick={onPractice}>
-              Pick a different call
-            </button>
+          <img className="next-photo" src="/photos/agent-desk.webp" alt="" width={800} height={1200} />
+          <div className="next-body">
+            <p className="eyebrow">Next up</p>
+            <h2>{next.title}</h2>
+            <p>{next.focus}</p>
+            {!hasName && (
+              <label className="name-field">
+                <span>Type your name to start</span>
+                <input
+                  value={agentName}
+                  onChange={(e) => onNameChange(e.target.value)}
+                  placeholder="First and last name"
+                  autoComplete="name"
+                />
+              </label>
+            )}
+            <div className="card-actions">
+              <button className="primary big" disabled={!hasName} onClick={() => onStart(next)}>
+                Start this call
+              </button>
+              <button className="secondary big" onClick={onPractice}>
+                Pick a different call
+              </button>
+            </div>
           </div>
         </section>
 
