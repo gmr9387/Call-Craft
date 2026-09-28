@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { dbOrNull } from "./db.js";
 import { env } from "./env.js";
+import { getSettings } from "./settings.js";
 
 // Spending guardrails. Every AI request is checked against these limits before it runs,
 // so a runaway script or a leaked link can't drain the Anthropic balance.
@@ -14,13 +15,27 @@ function limit(name: string, fallback: number): number {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-export const limits = {
+// The three spending limits an admin can change on the System page. A value saved there
+// wins over the environment variable, which wins over the default.
+export interface SpendingLimits {
   // All AI requests across the whole site in one UTC day. The main budget backstop.
-  dailyTotal: () => limit("CALLCRAFT_DAILY_AI_LIMIT", 1500),
+  dailyTotal: number;
   // AI requests from one person (or, when not signed in, one IP address) in the last hour.
-  perClientHourly: () => limit("CALLCRAFT_HOURLY_CLIENT_LIMIT", 120),
-  // Scenario drafts ("Write it for me") per class per UTC day.
-  draftsPerClassDaily: () => limit("CALLCRAFT_DAILY_DRAFT_LIMIT", 25),
+  perClientHourly: number;
+  // Scenario and call flow drafts ("Write it for me") per class per UTC day.
+  draftsPerClassDaily: number;
+}
+
+export async function spendingLimits(): Promise<SpendingLimits> {
+  const saved = (await getSettings()).limits ?? {};
+  return {
+    dailyTotal: saved.dailyTotal ?? limit("CALLCRAFT_DAILY_AI_LIMIT", 1500),
+    perClientHourly: saved.perClientHourly ?? limit("CALLCRAFT_HOURLY_CLIENT_LIMIT", 120),
+    draftsPerClassDaily: saved.draftsPerClassDaily ?? limit("CALLCRAFT_DAILY_DRAFT_LIMIT", 25),
+  };
+}
+
+export const limits = {
   // Health-check AI pings from one computer per hour.
   healthPerClientHourly: () => limit("CALLCRAFT_HOURLY_HEALTH_LIMIT", 10),
   // Failed sign-ins (wrong password, unknown class code) from one IP address per hour.
@@ -160,13 +175,14 @@ export async function checkUsage(
   const client = clientId(request, userId);
   const { counts, useMemory } = await safeCounts(client, classCode);
 
-  if (counts.total >= limits.dailyTotal()) throw new UsageLimitError(MESSAGES.daily);
+  const spend = await spendingLimits();
+  if (counts.total >= spend.dailyTotal) throw new UsageLimitError(MESSAGES.daily);
   if (kind === "health") {
     if (counts.clientHealth >= limits.healthPerClientHourly()) throw new UsageLimitError(MESSAGES.health);
-  } else if (counts.client >= limits.perClientHourly()) {
+  } else if (counts.client >= spend.perClientHourly) {
     throw new UsageLimitError(MESSAGES.client);
   }
-  if (kind === "draft" && classCode && counts.classDrafts >= limits.draftsPerClassDaily()) {
+  if (kind === "draft" && classCode && counts.classDrafts >= spend.draftsPerClassDaily) {
     throw new UsageLimitError(MESSAGES.drafts);
   }
 
@@ -181,4 +197,43 @@ export async function checkSigninAllowed(request: Request): Promise<void> {
 
 export async function recordSigninFailure(request: Request): Promise<void> {
   await safeRecord("signin", clientId(request), null, false);
+}
+
+export interface UsageSummary {
+  today: Record<UsageKind, number>;
+  lastHour: number;
+  // AI requests per UTC day for the last 7 days, oldest first.
+  week: { day: string; count: number }[];
+}
+
+// AI request counts for the admin's System page (from the usage log, so it needs a database).
+export async function usageSummary(): Promise<UsageSummary> {
+  const sql = dbOrNull();
+  const today: Record<UsageKind, number> = { reply: 0, score: 0, draft: 0, health: 0 };
+  if (!sql) return { today, lastHour: 0, week: [] };
+  const now = Date.now();
+  const dayStart = startOfUtcDay(now);
+  const weekStart = dayStart - 6 * 24 * 60 * 60 * 1000;
+  const [byKind, [hour], byDay] = await Promise.all([
+    sql`
+      select kind, count(*)::int as count from ai_usage
+      where created_at >= ${new Date(dayStart)} and kind <> 'signin' group by kind
+    `,
+    sql`
+      select count(*)::int as count from ai_usage
+      where created_at >= ${new Date(now - 60 * 60 * 1000)} and kind <> 'signin'
+    `,
+    sql`
+      select to_char(date_trunc('day', created_at at time zone 'UTC'), 'YYYY-MM-DD') as day, count(*)::int as count
+      from ai_usage where created_at >= ${new Date(weekStart)} and kind <> 'signin'
+      group by 1
+    `,
+  ]);
+  for (const r of byKind) today[r.kind as UsageKind] = r.count;
+  const counts = new Map(byDay.map((r) => [r.day as string, r.count as number]));
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(weekStart + i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    return { day, count: counts.get(day) ?? 0 };
+  });
+  return { today, lastHour: hour.count, week };
 }

@@ -16,7 +16,7 @@ function apiDevServer(): Plugin {
     configureServer(server: ViteDevServer) {
       server.middlewares.use('/api', async (req, res, next) => {
         const name = req.url?.replace(/^\//, '').split('?')[0]
-        if (!name || !['auth', 'calls', 'classes', 'coach', 'health', 'people', 'scenarios'].includes(name)) return next()
+        if (!name || !['admin', 'auth', 'calls', 'classes', 'coach', 'flows', 'health', 'people', 'scenarios'].includes(name)) return next()
         const mod = await server.ssrLoadModule(`/api/${name}.ts`)
         const handler = req.method === 'POST' ? mod.POST : req.method === 'GET' ? mod.GET : undefined
         if (!handler) {

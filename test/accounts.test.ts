@@ -8,7 +8,7 @@ import { admin, agent, newClass, trainer } from './people.ts'
 describe.skipIf(!hasDb)('accounts (database)', () => {
   it('makes the first account the admin, only once', async () => {
     const before = await new Browser().get(status)
-    expect(before.body).toEqual({ user: null, needsSetup: true })
+    expect(before.body).toMatchObject({ user: null, needsSetup: true })
 
     const a = await admin()
     const me = await a.get(status)

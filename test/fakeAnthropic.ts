@@ -26,6 +26,19 @@ const scorecard = {
   coaching: ['Give the disclosure earlier.'],
 }
 
+const flowDraft = {
+  name: 'Appointment reminder call',
+  company: 'Brightside Dental',
+  purpose: 'Call patients to confirm tomorrow\'s appointment.',
+  endGoal: 'The patient confirms or reschedules',
+  steps: [
+    { label: 'Greeting', guide: 'Say your name and that you are calling from Brightside Dental.' },
+    { label: 'Confirm identity', guide: 'Make sure you are speaking with the patient.' },
+    { label: 'Confirm time', guide: 'Read the appointment time and ask if it still works.' },
+  ],
+  rules: ['Never share appointment details with anyone but the patient.'],
+}
+
 const draft = {
   title: 'Night classes only',
   difficulty: 'Medium',
@@ -59,7 +72,9 @@ export async function startFakeAnthropic() {
         return fail(400, 'invalid_request_error', 'The beta server-side-fallback is not enabled for this organization.')
       }
       const prompt = JSON.stringify(body.messages)
-      const text = prompt.includes('build practice scenarios')
+      const text = prompt.includes('into a call flow')
+        ? JSON.stringify(flowDraft)
+        : prompt.includes('build practice scenarios')
         ? JSON.stringify(draft)
         : body.output_config?.format
           ? JSON.stringify(scorecard)

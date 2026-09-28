@@ -16,7 +16,7 @@ if (testDb) {
   const sql = postgres(testDb, { max: 1, onnotice: () => {} })
   await sql.unsafe(readFileSync(new URL('../db/schema.sql', import.meta.url), 'utf8'))
   // Each test file starts from an empty database, so the first account made becomes the admin.
-  await sql`truncate users, sessions, account_links, classes, attempts, scenarios, ai_usage cascade`
+  await sql`truncate users, sessions, account_links, classes, attempts, scenarios, ai_usage, call_flows, app_settings cascade`
   await sql.end()
 } else {
   delete process.env.DATABASE_URL

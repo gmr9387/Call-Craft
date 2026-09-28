@@ -129,3 +129,36 @@ create index if not exists classes_trainer_idx on classes (trainer_id);
 alter table ai_usage drop constraint if exists ai_usage_kind_check;
 alter table ai_usage add constraint ai_usage_kind_check
   check (kind in ('reply', 'score', 'draft', 'health', 'signin'));
+
+-- ---- Call flows ----
+-- Trainer-built call flows: the steps and rules agents are scored against.
+-- A class uses one flow; no flow means the built-in sample flow.
+create table if not exists call_flows (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(name) between 1 and 100),
+  company text not null check (char_length(company) between 1 and 100),
+  purpose text not null check (char_length(purpose) between 1 and 300),
+  end_goal text not null check (char_length(end_goal) between 1 and 200),
+  steps jsonb not null,
+  rules jsonb not null default '[]'::jsonb,
+  archived boolean not null default false,
+  created_by uuid references users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table call_flows enable row level security;
+
+alter table classes add column if not exists flow_id uuid references call_flows (id) on delete set null;
+-- Archived classes are hidden from lists and can't be joined.
+alter table classes add column if not exists archived boolean not null default false;
+
+-- ---- Settings ----
+-- Settings an admin changes in the app (spending limits) and the last AI problem seen.
+create table if not exists app_settings (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table app_settings enable row level security;

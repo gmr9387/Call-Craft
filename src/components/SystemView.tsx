@@ -1,0 +1,231 @@
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { checkSystem, saveLimits, systemStatus, type Check, type SpendingLimits, type SystemStatus } from '../api.ts'
+
+const ago = (iso: string) => {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  return min < 1 ? 'just now' : min < 60 ? `${min} min ago` : `${Math.round(min / 60)} h ago`
+}
+
+const LIMIT_FIELDS: { key: keyof SpendingLimits; label: string; help: string }[] = [
+  {
+    key: 'dailyTotal',
+    label: 'AI requests per day (whole site)',
+    help: 'The main budget cap. A practice call uses about 10–20 requests, so 1,500 covers roughly 75–150 calls a day.',
+  },
+  {
+    key: 'perClientHourly',
+    label: 'AI requests per person, per hour',
+    help: 'Stops one person (or a stuck browser) from using up the day. 120 is about 6–12 calls an hour.',
+  },
+  {
+    key: 'draftsPerClassDaily',
+    label: '"Write it for me" drafts per class, per day',
+    help: 'Scenario drafts use more AI than a normal reply.',
+  },
+]
+
+// Admins: is CallCraft healthy, how much AI is it using, and the spending limits.
+export default function SystemView() {
+  const [status, setStatus] = useState<SystemStatus | null>(null)
+  const [limits, setLimits] = useState<Record<keyof SpendingLimits, string> | null>(null)
+  const [checks, setChecks] = useState<{ ai: Check; database: Check } | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const apply = useCallback((s: SystemStatus) => {
+    setStatus(s)
+    setLimits({
+      dailyTotal: String(s.limits.dailyTotal),
+      perClientHourly: String(s.limits.perClientHourly),
+      draftsPerClassDaily: String(s.limits.draftsPerClassDaily),
+    })
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    systemStatus().then(
+      (s) => !cancelled && apply(s),
+      (err) => !cancelled && setError(err instanceof Error ? err.message : 'Could not load the system status.'),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [apply])
+
+  const check = async () => {
+    setBusy('check')
+    setError(null)
+    try {
+      setChecks(await checkSystem())
+      apply(await systemStatus())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The check did not run.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!limits) return
+    setBusy('limits')
+    setError(null)
+    setNotice(null)
+    try {
+      await saveLimits({
+        dailyTotal: Number(limits.dailyTotal),
+        perClientHourly: Number(limits.perClientHourly),
+        draftsPerClassDaily: Number(limits.draftsPerClassDaily),
+      })
+      apply(await systemStatus())
+      setNotice('Limits saved. They take effect within a minute.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the limits.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (!status || !limits) {
+    return (
+      <div className="history">
+        <div className="page-head">
+          <h1>System</h1>
+        </div>
+        {error ? (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        ) : (
+          <p className="card empty">Loading…</p>
+        )}
+      </div>
+    )
+  }
+
+  const { usage, counts } = status
+  const usedToday = usage.today.reply + usage.today.score + usage.today.draft + usage.today.health
+  const pct = status.limits.dailyTotal > 0 ? Math.min(100, Math.round((usedToday / status.limits.dailyTotal) * 100)) : 100
+  const weekMax = Math.max(1, ...usage.week.map((d) => d.count))
+
+  return (
+    <div className="history">
+      <div className="page-head">
+        <h1>System</h1>
+        <p className="muted">Is CallCraft working, how much AI is it using, and how much is it allowed to use.</p>
+      </div>
+
+      {status.aiProblem && (
+        <div className="card alert-card" role="alert">
+          <h2>⚠ The AI had a problem {ago(status.aiProblem.at)}</h2>
+          <p>{status.aiProblem.message}</p>
+          <p className="small">
+            Practice calls fail until this is fixed. Low credit: add credit in the Anthropic console. Rejected key:
+            update ANTHROPIC_API_KEY in Vercel and redeploy. Then click "Check now".
+          </p>
+        </div>
+      )}
+      {notice && (
+        <p className="notice" role="status">
+          {notice}
+        </p>
+      )}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+
+      <div className="stat-row five">
+        {[
+          ['Agents', counts.agents],
+          ['Trainers & admins', counts.staff],
+          ['Active classes', counts.classes],
+          ['Calls scored today', counts.callsToday],
+          ['Practiced this week', counts.activeThisWeek],
+        ].map(([label, value]) => (
+          <div key={label} className="card stat">
+            <span className="stat-label">{label}</span>
+            <span className="stat-value">{value}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="settings-grid">
+        <section className="card setup-card">
+          <h2>AI use today</h2>
+          <p>
+            <strong>{usedToday.toLocaleString()}</strong> of {status.limits.dailyTotal.toLocaleString()} requests (
+            {pct}%)
+          </p>
+          <div className={`meter ${pct >= 80 ? 'meter-warn' : ''}`} aria-hidden>
+            <span style={{ width: `${pct}%` }} />
+          </div>
+          <p className="muted small">
+            Replies {usage.today.reply} · Scores {usage.today.score} · Drafts {usage.today.draft} · Checks{' '}
+            {usage.today.health} · Last hour {usage.lastHour}
+          </p>
+          <div className="week-chart" aria-label="AI requests per day, last 7 days">
+            {usage.week.map((d) => (
+              <div key={d.day} className="week-bar" title={`${d.day}: ${d.count}`}>
+                <span style={{ height: `${Math.round((d.count / weekMax) * 100)}%` }} />
+                <small>{new Date(`${d.day}T12:00:00Z`).toLocaleDateString(undefined, { weekday: 'short' })}</small>
+              </div>
+            ))}
+          </div>
+          <p className="muted small">Days reset at midnight UTC.</p>
+        </section>
+
+        <section className="card setup-card">
+          <h2>Health check</h2>
+          <p className="muted small">
+            Sends one tiny AI request and checks the database. Replies use <code>{status.models.replies}</code>, scoring
+            uses <code>{status.models.scoring}</code>.
+          </p>
+          {checks && (
+            <ul className="check-results">
+              <li className={checks.ai.ok ? 'ok' : 'bad'}>
+                {checks.ai.ok ? '✓' : '✕'} AI: {checks.ai.detail}
+              </li>
+              <li className={checks.database.ok ? 'ok' : 'bad'}>
+                {checks.database.ok ? '✓' : '✕'} Database: {checks.database.detail}
+              </li>
+            </ul>
+          )}
+          <button className="secondary" onClick={() => void check()} disabled={busy === 'check'}>
+            {busy === 'check' ? 'Checking…' : 'Check now'}
+          </button>
+        </section>
+      </div>
+
+      <form className="card limits-form" onSubmit={save}>
+        <h2>Spending limits</h2>
+        <p className="muted small">
+          When a limit is reached, people see a friendly message and no AI request is made, so the bill can't run away.
+          Set a limit to 0 to pause all practice.
+        </p>
+        {LIMIT_FIELDS.map((f) => (
+          <label key={f.key} className="limit-row">
+            <span>
+              <strong>{f.label}</strong>
+              <small className="muted">{f.help}</small>
+            </span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={limits[f.key]}
+              onChange={(e) => setLimits({ ...limits, [f.key]: e.target.value })}
+            />
+          </label>
+        ))}
+        <div className="actions-right">
+          <button className="primary" type="submit" disabled={busy === 'limits'}>
+            {busy === 'limits' ? 'Saving…' : 'Save limits'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}

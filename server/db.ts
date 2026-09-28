@@ -4,6 +4,8 @@ import { env } from "./env.js";
 import type { Scenario, Turn } from "../shared/scenarios.js";
 import type { ScorecardResult } from "../shared/scorecard.js";
 import type { ScenarioInputValue } from "../shared/scenarioInput.js";
+import { BUILTIN_FLOW } from "../shared/flows.js";
+import { flowForClass } from "./flows.js";
 import type {
   ClassAgent,
   ClassDashboard,
@@ -61,48 +63,57 @@ interface ClassRow {
   name: string;
   class_code: string;
   trainer_id: string | null;
+  archived: boolean;
 }
 
 const toClassInfo = (r: ClassRow): ClassInfo => ({ id: r.id, name: r.name, classCode: r.class_code });
 
 // ---- Classes ----
 
-export async function createClass(trainerId: string, name: string): Promise<ClassInfo> {
+// flowId null means the built-in sample flow.
+export async function createClass(trainerId: string, name: string, flowId: string | null): Promise<ClassInfo> {
   // Retry on the (unlikely) chance of a class code collision.
   for (let attempt = 0; attempt < 5; attempt++) {
     const rows = await db()<ClassRow[]>`
-      insert into classes (name, class_code, trainer_id)
-      values (${name}, ${newClassCode()}, ${trainerId})
+      insert into classes (name, class_code, trainer_id, flow_id)
+      values (${name}, ${newClassCode()}, ${trainerId}, ${flowId})
       on conflict (class_code) do nothing
-      returning id, name, class_code, trainer_id
+      returning id, name, class_code, trainer_id, archived
     `;
     if (rows.length) return toClassInfo(rows[0]);
   }
   throw new Error("Could not generate a unique class code.");
 }
 
-export async function classById(id: string): Promise<(ClassInfo & { trainerId: string | null }) | null> {
-  const rows = await db()<ClassRow[]>`select id, name, class_code, trainer_id from classes where id = ${id}`;
-  return rows[0] ? { ...toClassInfo(rows[0]), trainerId: rows[0].trainer_id } : null;
+export async function classById(
+  id: string,
+): Promise<(ClassInfo & { trainerId: string | null; archived: boolean }) | null> {
+  const rows = await db()<ClassRow[]>`select id, name, class_code, trainer_id, archived from classes where id = ${id}`;
+  return rows[0] ? { ...toClassInfo(rows[0]), trainerId: rows[0].trainer_id, archived: rows[0].archived } : null;
 }
 
 // Classes a trainer runs, or every class when trainerId is null (admins).
 export async function listClasses(trainerId: string | null): Promise<ClassSummary[]> {
   const rows = await db()`
-    select c.id, c.name, c.class_code, t.name as trainer_name,
+    select c.id, c.name, c.class_code, c.archived, c.trainer_id, t.name as trainer_name,
+      coalesce(f.name, ${BUILTIN_FLOW.name}) as flow_name,
       (select count(*)::int from users u where u.class_id = c.id and u.role = 'agent') as agent_count,
       (select count(*)::int from attempts a where a.class_id = c.id) as call_count,
       (select max(a.created_at) from attempts a where a.class_id = c.id) as last_call_at
     from classes c
     left join users t on t.id = c.trainer_id
+    left join call_flows f on f.id = c.flow_id
     where ${trainerId ? db()`c.trainer_id = ${trainerId}` : db()`true`}
-    order by c.created_at desc
+    order by c.archived, c.created_at desc
   `;
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
     classCode: r.class_code,
+    trainerId: r.trainer_id ?? null,
     trainerName: r.trainer_name ?? null,
+    flowName: r.flow_name,
+    archived: r.archived,
     agentCount: r.agent_count,
     callCount: r.call_count,
     lastCallAt: r.last_call_at ? new Date(r.last_call_at).toISOString() : null,
@@ -129,7 +140,7 @@ export async function classDashboard(classId: string): Promise<ClassDashboard | 
   const cls = await classById(classId);
   if (!cls) return null;
 
-  const [attempts, agents, scenarios] = await Promise.all([
+  const [attempts, agents, scenarios, flow] = await Promise.all([
     db()`
       select id, user_id, agent_name, scenario_id, scenario_title, started_at, duration_sec, transcript, scorecard
       from attempts
@@ -144,12 +155,16 @@ export async function classDashboard(classId: string): Promise<ClassDashboard | 
       order by name
     `,
     listScenarios(classId, true),
+    flowForClass(classId),
   ]);
 
   return {
     classInfo: { id: cls.id, name: cls.name, classCode: cls.classCode },
     attempts: attempts.map(toAttempt),
     scenarios,
+    flow,
+    trainerId: cls.trainerId,
+    archived: cls.archived,
     agents: agents.map(
       (r): ClassAgent => ({
         id: r.id,
@@ -162,9 +177,11 @@ export async function classDashboard(classId: string): Promise<ClassDashboard | 
   };
 }
 
+// Archived classes can't be joined, so their codes stop working.
 export async function classByCode(code: string): Promise<ClassInfo | null> {
   const rows = await db()<ClassRow[]>`
-    select id, name, class_code, trainer_id from classes where class_code = ${normalizeClassCode(code)}
+    select id, name, class_code, trainer_id, archived from classes
+    where class_code = ${normalizeClassCode(code)} and not archived
   `;
   return rows[0] ? toClassInfo(rows[0]) : null;
 }
@@ -173,10 +190,8 @@ export async function classByCode(code: string): Promise<ClassInfo | null> {
 export async function classForAgent(classId: string): Promise<JoinResult | null> {
   const cls = await classById(classId);
   if (!cls) return null;
-  return {
-    classInfo: { id: cls.id, name: cls.name, classCode: cls.classCode },
-    scenarios: await listScenarios(cls.id, false),
-  };
+  const [scenarios, flow] = await Promise.all([listScenarios(cls.id, false), flowForClass(cls.id)]);
+  return { classInfo: { id: cls.id, name: cls.name, classCode: cls.classCode }, scenarios, flow };
 }
 
 // Moves an agent into the class with this code. Returns null if the code doesn't exist.
@@ -192,6 +207,34 @@ export async function removeAgentFromClass(classId: string, userId: string): Pro
   const rows = await db()`
     update users set class_id = null
     where id = ${userId} and class_id = ${classId} and role = 'agent'
+    returning id
+  `;
+  return rows.length > 0;
+}
+
+// Moves an agent into another class. Returns false when they aren't an agent.
+export async function moveAgent(userId: string, toClassId: string): Promise<boolean> {
+  const rows = await db()`update users set class_id = ${toClassId} where id = ${userId} and role = 'agent' returning id`;
+  return rows.length > 0;
+}
+
+export interface ClassChanges {
+  name?: string;
+  // null means the built-in sample flow.
+  flowId?: string | null;
+  trainerId?: string;
+  archived?: boolean;
+}
+
+export async function updateClass(classId: string, changes: ClassChanges): Promise<boolean> {
+  const sql = db();
+  const rows = await sql`
+    update classes set
+      name = ${changes.name ?? sql`name`},
+      flow_id = ${changes.flowId === undefined ? sql`flow_id` : changes.flowId},
+      trainer_id = ${changes.trainerId ?? sql`trainer_id`},
+      archived = ${changes.archived ?? sql`archived`}
+    where id = ${classId}
     returning id
   `;
   return rows.length > 0;
