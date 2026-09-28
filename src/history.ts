@@ -1,4 +1,5 @@
 import type { ClassInfo, SavedAttempt } from '../shared/classes.ts'
+import { getScenario } from '../shared/scenarios.ts'
 
 export type Attempt = SavedAttempt
 
@@ -68,4 +69,20 @@ export function loadTrainerKey(): string {
 
 export function saveTrainerKey(key: string | null): void {
   write(TRAINER_KEY, key)
+}
+
+// Title to show for a call, including calls on trainer-built scenarios.
+export function attemptTitle(attempt: Attempt): string {
+  return attempt.scenarioTitle ?? getScenario(attempt.scenarioId)?.title ?? 'Custom scenario'
+}
+
+const SIGNED_IN_KEY = 'callcraft.signedIn'
+
+// Development-only sign-in: a flag in this browser, no account or password yet.
+export function loadSignedIn(): boolean {
+  return read(SIGNED_IN_KEY) === '1'
+}
+
+export function saveSignedIn(signedIn: boolean): void {
+  write(SIGNED_IN_KEY, signedIn ? '1' : null)
 }

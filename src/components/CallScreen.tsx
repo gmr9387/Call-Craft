@@ -9,6 +9,8 @@ interface Props {
   scenario: Scenario
   agentName: string
   classInfo: ClassInfo | null
+  // Trainer test call: uses the class for trainer-built scenarios but isn't saved to it.
+  preview?: boolean
   onScored: (attempt: Attempt, saveNote: SaveNote) => void
   onCancel: () => void
 }
@@ -33,7 +35,7 @@ function formatTime(sec: number): string {
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
 }
 
-export default function CallScreen({ scenario, agentName, classInfo, onScored, onCancel }: Props) {
+export default function CallScreen({ scenario, agentName, classInfo, preview = false, onScored, onCancel }: Props) {
   const [transcript, setTranscript] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [waiting, setWaiting] = useState(false)
@@ -108,7 +110,7 @@ export default function CallScreen({ scenario, agentName, classInfo, onScored, o
     setInput('')
     setWaiting(true)
     try {
-      const reply = stripMarkers(await getProspectReply(scenario.id, next))
+      const reply = stripMarkers(await getProspectReply(scenario.id, next, classInfo?.classCode))
       if (reply.text) {
         setTranscript([...next, { speaker: 'prospect', text: reply.text }])
         if (voiceOut) speak(reply.text)
@@ -135,26 +137,31 @@ export default function CallScreen({ scenario, agentName, classInfo, onScored, o
     setError(null)
     try {
       const name = agentName.trim()
-      const result = await scoreCall(
-        scenario.id,
-        transcript,
-        classInfo ? { classCode: classInfo.classCode, agentName: name, startedAt, durationSec: elapsed } : undefined,
-      )
+      const result = await scoreCall(scenario.id, transcript, {
+        classCode: classInfo?.classCode,
+        saveToClass: !!classInfo && !preview,
+        agentName: name,
+        startedAt,
+        durationSec: elapsed,
+      })
       const attempt: Attempt = {
         id: result.attemptId ?? crypto.randomUUID(),
         agentName: name,
         scenarioId: scenario.id,
+        scenarioTitle: scenario.title,
         startedAt,
         durationSec: elapsed,
         transcript,
         scorecard: result.scorecard,
       }
-      saveAttempt(attempt)
-      const note: SaveNote = !classInfo
-        ? { ok: true, text: 'Saved on this device. Join a class to share results with your trainer.' }
-        : result.saved
-          ? { ok: true, text: `Saved to ${classInfo.name}. Your trainer can see this call.` }
-          : { ok: false, text: result.saveError ?? "This call wasn't saved to your class." }
+      if (!preview) saveAttempt(attempt)
+      const note: SaveNote = preview
+        ? { ok: true, text: "Preview call: not saved to the class or this device's history." }
+        : !classInfo
+          ? { ok: true, text: 'Saved on this device. Join a class to share results with your trainer.' }
+          : result.saved
+            ? { ok: true, text: `Saved to ${classInfo.name}. Your trainer can see this call.` }
+            : { ok: false, text: result.saveError ?? "This call wasn't saved to your class." }
       onScored(attempt, note)
     } catch (e) {
       setPhase('live')
@@ -167,7 +174,9 @@ export default function CallScreen({ scenario, agentName, classInfo, onScored, o
       <section className="card call-panel">
         <div className="call-header">
           <div>
-            <p className="eyebrow">Outbound call · {scenario.title}</p>
+            <p className="eyebrow">
+              {preview ? 'Trainer preview' : 'Outbound call'} · {scenario.title}
+            </p>
             <h2>
               Calling {scenario.leadName}
               <span className={`status-dot ${callOver ? 'ended' : 'live'}`} aria-hidden />

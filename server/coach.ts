@@ -4,10 +4,12 @@ import {
   CALL_FLOW,
   END_MARKERS,
   SCHOOL_NAME,
+  STEP_IDS,
   type Scenario,
   type Turn,
 } from "../shared/scenarios.js";
 import { Scorecard, type ScorecardResult } from "../shared/scorecard.js";
+import { ScenarioDraft, type ScenarioInputValue } from "../shared/scenarioInput.js";
 
 const MODEL = process.env.CALLCRAFT_MODEL ?? "claude-opus-5";
 
@@ -146,4 +148,75 @@ export async function scoreCall(scenario: Scenario, transcript: Turn[]): Promise
     throw new CoachError("The scorecard came back incomplete. Try scoring again.");
   }
   return response.parsed_output;
+}
+
+function draftPrompt(description: string): string {
+  const flow = CALL_FLOW.map((s) => `- ${s.id} (${s.label}): ${s.guide}`).join("\n");
+  const example = SCENARIOS_EXAMPLE;
+  return `You help contact center trainers build practice scenarios for a call simulator.
+Agents make an outbound call for ${SCHOOL_NAME} (a fictional school) to someone who requested program information. An AI plays the prospect using the persona you write, and a scorer grades the agent on the standard call flow plus your success criteria.
+
+Standard call flow:
+${flow}
+
+Here is an example of a finished scenario, for format and level of detail:
+${example}
+
+The trainer wants a scenario like this:
+"""
+${description}
+"""
+
+Write the scenario:
+- title: short and specific, under 60 characters.
+- difficulty: Easy, Medium, or Hard.
+- focus: one or two sentences telling the agent what to practice. Don't reveal hidden details of the persona.
+- leadName and program: a realistic fictional person and a plausible degree program.
+- persona: written to the AI prospect in second person ("You are..."). Include background, highest education, military affiliation, mood, what they want, and exactly how they react to good versus poor handling. 80-200 words.
+- successCriteria: 2-4 specific, observable things the agent must do in this scenario.
+- notApplicable: ids of standard flow steps the call can't reasonably reach in this scenario (for example, qualifying questions when the right person isn't on the line). Usually empty.
+Keep everything fictional and generic. Never include real companies, real schools, or real people.`;
+}
+
+const SCENARIOS_EXAMPLE = `title: "Just tell me the price"
+difficulty: Medium
+focus: The prospect keeps pushing for tuition and financial aid numbers. Redirect without quoting anything.
+leadName: Alicia Moreno
+program: RN to BSN (Nursing)
+persona: You are Alicia Moreno, 38, a working registered nurse with an associate degree in nursing. No military affiliation. You're interested but money is your main concern. Early and repeatedly ask about tuition and financial aid. If the agent gives you actual numbers or promises about aid, accept them happily. If the agent explains the admissions counselor can go over costs and aid in detail, accept it after the second redirect and continue.
+successCriteria: ["Never quotes tuition, fees, or financial aid amounts", "Acknowledges the cost concern with empathy and redirects to the admissions counselor"]
+notApplicable: []`;
+
+function clip(text: string, max: number): string {
+  const t = text.trim();
+  return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + "…";
+}
+
+// Drafts a scenario from a trainer's one-line description. The trainer reviews and edits it before saving.
+export async function draftScenario(description: string): Promise<ScenarioInputValue> {
+  const response = await getClient().beta.messages.parse({
+    ...FALLBACK,
+    model: MODEL,
+    max_tokens: 16000,
+    output_config: { effort: "medium", format: betaZodOutputFormat(ScenarioDraft) },
+    messages: [{ role: "user", content: draftPrompt(description) }],
+  });
+
+  if (response.stop_reason === "refusal") {
+    throw new CoachError("That description couldn't be turned into a scenario. Try describing it differently.");
+  }
+  const d = response.parsed_output;
+  if (!d) throw new CoachError("The draft came back incomplete. Try again.");
+
+  const criteria = d.successCriteria.map((c) => clip(c, 200)).filter(Boolean).slice(0, 6);
+  return {
+    title: clip(d.title, 80),
+    difficulty: d.difficulty,
+    focus: clip(d.focus, 400),
+    leadName: clip(d.leadName, 80),
+    program: clip(d.program, 120),
+    persona: clip(d.persona, 3000),
+    successCriteria: criteria.length ? criteria : ["Completes the standard call flow professionally"],
+    notApplicable: [...new Set(d.notApplicable)].filter((id) => (STEP_IDS as readonly string[]).includes(id)),
+  };
 }

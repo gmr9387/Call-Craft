@@ -10,6 +10,18 @@ export interface FlowStep {
   guide: string;
 }
 
+export const STEP_IDS = [
+  "greeting",
+  "right_party",
+  "recording_disclosure",
+  "confirm_request",
+  "qualify_education",
+  "qualify_military",
+  "transfer_setup",
+] as const;
+
+export type StepId = (typeof STEP_IDS)[number];
+
 // The standard call flow agents are scored against, in the expected order.
 export const CALL_FLOW: FlowStep[] = [
   {
@@ -49,7 +61,9 @@ export const CALL_FLOW: FlowStep[] = [
   },
 ];
 
-export type Difficulty = "Easy" | "Medium" | "Hard";
+export const DIFFICULTIES = ["Easy", "Medium", "Hard"] as const;
+
+export type Difficulty = (typeof DIFFICULTIES)[number];
 
 export interface Scenario {
   id: string;
@@ -66,6 +80,16 @@ export interface Scenario {
   successCriteria: string[];
   // Which standard steps don't apply (for example, no qualifying a third party).
   notApplicable?: string[];
+  // Set on trainer-built scenarios, which are stored per class.
+  custom?: boolean;
+  archived?: boolean;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Trainer-built scenarios use database ids; built-in scenarios use short slugs.
+export function isCustomScenarioId(id: string): boolean {
+  return UUID.test(id);
 }
 
 export const SCENARIOS: Scenario[] = [

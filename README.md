@@ -28,7 +28,11 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
     - **By agent:** calls, average score, pass rate, compliance issues, most-missed call step, last practiced
     - **By scenario:** calls, average score, pass rate
     - **All calls:** each call, with its full scorecard and transcript
+- **Scenario builder** (trainers): describe a caller in one sentence and click **Write it for me**. The AI fills in the scenario: name, difficulty, what to practice, who the caller is and how they act, and what the agent must do to pass. The trainer edits anything, saves, and can **Try it** right away; trial calls aren't saved. Agents in the class see these scenarios under **From your trainer**. Trainers can hide a scenario from agents at any time.
 - **This device**: calls are also kept in the browser, so the app works without a class or a database.
+- **Marketing page and sign-in**: the site opens on a simple marketing page. **Sign in** currently lets anyone in with one click (development only; there are no accounts or passwords yet).
+- **Dashboard**: after signing in, a left menu (Dashboard, Practice, My calls, Trainer). The dashboard shows the next call to practice, your name and class, three numbers (calls, average score, calls passed), and your recent calls.
+- **Desktop only**: the app itself needs a window at least 900px wide, like an agent's real workstation. On phones it asks the person to use a computer. The marketing page works on any screen.
 
 ## How it works
 
@@ -37,10 +41,12 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
 | `shared/scenarios.ts` | Call flow, scenarios, and hidden prospect personas |
 | `shared/scorecard.ts` | Scorecard schema (Zod) |
 | `shared/classes.ts` | Class and saved-call types |
+| `shared/scenarioInput.ts` | Scenario builder fields and validation (Zod) |
 | `server/coach.ts` | Claude calls: the prospect's next line (low effort, for fast replies) and the structured scorecard (high effort) |
 | `server/db.ts` | Postgres access: classes, saved calls, dashboard |
 | `api/coach.ts` | `POST /api/coach`: `action: "reply" \| "score"`; `score` saves to the class when a class code is sent |
 | `api/classes.ts` | `POST /api/classes`: `action: "create" \| "join" \| "dashboard"` |
+| `api/scenarios.ts` | `POST /api/scenarios` (needs the trainer key): `action: "draft" \| "create" \| "update" \| "archive"` |
 | `db/schema.sql` | Database schema (safe to re-run) |
 | `src/` | React UI |
 
@@ -56,7 +62,9 @@ Class dashboards need Postgres. Without `DATABASE_URL` everything else still wor
 
 Row-level security is on with no policies, so Supabase's public REST API can't read these tables. Only the server reaches them.
 
-**Access model (pilot-grade):** there are no user logins yet. Anyone with a class code can save calls to that class. Anyone with the trainer key can view all of that class's calls, so treat the key like a password. Real trainer and agent accounts are the next step before wider use.
+**Updating an existing database:** re-run `db/schema.sql`. It only adds what's missing.
+
+**Access model (pilot-grade):** there are no user logins yet, and "Sign in" is a one-click bypass. Anyone with a class code can save calls to that class. Anyone with the trainer key can view all of that class's calls, so treat the key like a password. Real trainer and agent accounts are the next step before wider use.
 
 ## Run locally
 
@@ -81,6 +89,7 @@ npm run lint
 
 ## Next steps
 
-- Trainer and agent logins in place of shared codes and keys.
+- Real sign-in (trainer and agent accounts) in place of the one-click bypass and shared codes and keys.
+- Custom call flows, so scenarios can cover programs other than the higher-ed inquiry call.
 - Let trainers add their own scenarios and scripts (under the client's permission during a pilot).
 - Real-time voice calls instead of browser speech.

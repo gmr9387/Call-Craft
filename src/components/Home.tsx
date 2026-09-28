@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import type { ClassInfo } from '../../shared/classes.ts'
+import type { ClassInfo, JoinResult } from '../../shared/classes.ts'
 import { CALL_FLOW, SCENARIOS, SCHOOL_NAME, type Scenario } from '../../shared/scenarios.ts'
 import { joinClass } from '../api.ts'
 
@@ -7,11 +7,17 @@ interface Props {
   agentName: string
   onNameChange: (name: string) => void
   classInfo: ClassInfo | null
-  onClassChange: (info: ClassInfo | null) => void
+  classScenarios: Scenario[]
   onStart: (scenario: Scenario) => void
 }
 
-function ClassJoin({ classInfo, onClassChange }: Pick<Props, 'classInfo' | 'onClassChange'>) {
+interface ClassJoinProps {
+  classInfo: ClassInfo | null
+  onJoin: (result: JoinResult) => void
+  onLeave: () => void
+}
+
+export function ClassJoin({ classInfo, onJoin, onLeave }: ClassJoinProps) {
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -20,10 +26,9 @@ function ClassJoin({ classInfo, onClassChange }: Pick<Props, 'classInfo' | 'onCl
     return (
       <div className="class-joined">
         <span>
-          Practicing in <strong>{classInfo.name}</strong> <span className="muted">({classInfo.classCode})</span>. Your
-          scored calls are shared with your trainer.
+          You're in <strong>{classInfo.name}</strong>. Your trainer can see your scores.
         </span>
-        <button className="link" onClick={() => onClassChange(null)}>
+        <button className="link" onClick={onLeave}>
           Leave class
         </button>
       </div>
@@ -35,7 +40,7 @@ function ClassJoin({ classInfo, onClassChange }: Pick<Props, 'classInfo' | 'onCl
     setBusy(true)
     setError(null)
     try {
-      onClassChange(await joinClass(code))
+      onJoin(await joinClass(code))
       setCode('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not join that class.')
@@ -47,7 +52,7 @@ function ClassJoin({ classInfo, onClassChange }: Pick<Props, 'classInfo' | 'onCl
   return (
     <form className="class-join" onSubmit={join}>
       <label>
-        <span>Class code (optional, from your trainer)</span>
+        <span>Class code (your trainer gives you this)</span>
         <input
           value={code}
           onChange={(e) => setCode(e.target.value.toUpperCase())}
@@ -68,62 +73,82 @@ function ClassJoin({ classInfo, onClassChange }: Pick<Props, 'classInfo' | 'onCl
   )
 }
 
-export default function Home({ agentName, onNameChange, classInfo, onClassChange, onStart }: Props) {
+export function ScenarioGrid({
+  scenarios,
+  canStart,
+  onStart,
+}: {
+  scenarios: Scenario[]
+  canStart: boolean
+  onStart: (scenario: Scenario) => void
+}) {
+  return (
+    <div className="scenario-grid">
+      {scenarios.map((s) => (
+        <article key={s.id} className="card scenario-card">
+          <div className="scenario-head">
+            <h3>{s.title}</h3>
+            <span className={`pill difficulty-${s.difficulty.toLowerCase()}`}>{s.difficulty}</span>
+          </div>
+          <p>{s.focus}</p>
+          <dl className="lead">
+            <div>
+              <dt>Calling</dt>
+              <dd>{s.leadName}</dd>
+            </div>
+            <div>
+              <dt>Program</dt>
+              <dd>{s.program}</dd>
+            </div>
+          </dl>
+          <button className="primary" disabled={!canStart} onClick={() => onStart(s)}>
+            Start call
+          </button>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+export default function Home({ agentName, onNameChange, classInfo, classScenarios, onStart }: Props) {
+  const hasName = !!agentName.trim()
   return (
     <div className="home">
-      <section className="hero">
-        <h1>Practice the call before it counts.</h1>
-        <p>
-          Run realistic outbound calls with an AI prospect, then get scored on the call flow, compliance, and soft
-          skills, with specific coaching.
-        </p>
-        <label className="name-field">
-          <span>Your name (used on the call and in the trainer view)</span>
-          <input
-            value={agentName}
-            onChange={(e) => onNameChange(e.target.value)}
-            placeholder="First and last name"
-            autoComplete="name"
-          />
-        </label>
-        <ClassJoin classInfo={classInfo} onClassChange={onClassChange} />
+      <section className="page-head">
+        <h1>Practice</h1>
+        <p className="muted">Pick a call. When it ends, you get a score and tips.</p>
+        {!hasName && (
+          <label className="name-field">
+            <span>First, type your name</span>
+            <input
+              value={agentName}
+              onChange={(e) => onNameChange(e.target.value)}
+              placeholder="First and last name"
+              autoComplete="name"
+            />
+          </label>
+        )}
       </section>
+
+      {classScenarios.length > 0 && (
+        <section>
+          <h2>From your trainer</h2>
+          <p className="muted">Practice calls made for {classInfo?.name}.</p>
+          <ScenarioGrid scenarios={classScenarios} canStart={hasName} onStart={onStart} />
+        </section>
+      )}
 
       <section>
-        <h2>Pick a scenario</h2>
+        <h2>{classScenarios.length > 0 ? 'More practice calls' : 'Practice calls'}</h2>
         <p className="muted">
-          Outbound inquiry call for {SCHOOL_NAME} (a fictional school). Every scenario uses the same call flow; the
-          prospect is what changes.
+          You'll call someone who asked about {SCHOOL_NAME} (a made-up school). Each call has a different kind of
+          person on the other end.
         </p>
-        <div className="scenario-grid">
-          {SCENARIOS.map((s) => (
-            <article key={s.id} className="card scenario-card">
-              <div className="scenario-head">
-                <h3>{s.title}</h3>
-                <span className={`pill difficulty-${s.difficulty.toLowerCase()}`}>{s.difficulty}</span>
-              </div>
-              <p>{s.focus}</p>
-              <dl className="lead">
-                <div>
-                  <dt>Lead</dt>
-                  <dd>{s.leadName}</dd>
-                </div>
-                <div>
-                  <dt>Program</dt>
-                  <dd>{s.program}</dd>
-                </div>
-              </dl>
-              <button className="primary" disabled={!agentName.trim()} onClick={() => onStart(s)}>
-                Start call
-              </button>
-            </article>
-          ))}
-        </div>
-        {!agentName.trim() && <p className="muted small">Enter your name above to start a call.</p>}
+        <ScenarioGrid scenarios={SCENARIOS} canStart={hasName} onStart={onStart} />
       </section>
 
-      <section className="card flow-card">
-        <h2>The call flow you're scored on</h2>
+      <details className="card flow-card">
+        <summary>The steps of every call</summary>
         <ol className="flow-list">
           {CALL_FLOW.map((step) => (
             <li key={step.id}>
@@ -131,7 +156,7 @@ export default function Home({ agentName, onNameChange, classInfo, onClassChange
             </li>
           ))}
         </ol>
-      </section>
+      </details>
     </div>
   )
 }

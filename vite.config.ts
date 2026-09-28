@@ -16,7 +16,7 @@ function apiDevServer(): Plugin {
     configureServer(server: ViteDevServer) {
       server.middlewares.use('/api', async (req, res, next) => {
         const name = req.url?.replace(/^\//, '').split('?')[0]
-        if (name !== 'coach' && name !== 'classes') return next()
+        if (name !== 'coach' && name !== 'classes' && name !== 'scenarios') return next()
         if (req.method !== 'POST') {
           res.statusCode = 405
           res.end()
