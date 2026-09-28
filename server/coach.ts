@@ -14,11 +14,28 @@ import { ScenarioDraft, type ScenarioInputValue } from "../shared/scenarioInput.
 const MODEL = process.env.CALLCRAFT_MODEL ?? "claude-opus-5";
 
 // Server-side refusal fallback: a declined request is re-run on Anthropic's
-// recommended fallback model inside the same call.
+// recommended fallback model inside the same call. It's a beta feature, so if an
+// account doesn't have it, requests are retried (and later sent) without it.
 const FALLBACK: { betas: Anthropic.Beta.AnthropicBeta[]; fallbacks: "default" } = {
   betas: ["server-side-fallback-2026-07-01"],
   fallbacks: "default",
 };
+type FallbackOptions = Partial<typeof FALLBACK>;
+let fallbackSupported = true;
+
+async function withFallback<T>(run: (options: FallbackOptions) => Promise<T>): Promise<T> {
+  if (!fallbackSupported) return run({});
+  try {
+    return await run(FALLBACK);
+  } catch (error) {
+    if (error instanceof Anthropic.BadRequestError && /fallback|beta/i.test(error.message)) {
+      console.warn("Refusal fallback isn't available on this account; continuing without it.");
+      fallbackSupported = false;
+      return run({});
+    }
+    throw error;
+  }
+}
 
 let client: Anthropic | undefined;
 function getClient(): Anthropic {
@@ -68,15 +85,17 @@ export async function prospectReply(scenario: Scenario, transcript: Turn[]): Pro
     throw new CoachError("The agent must speak before the prospect replies.");
   }
 
-  const response = await getClient().beta.messages.create({
-    ...FALLBACK,
-    model: MODEL,
-    max_tokens: 4000,
-    // Fast, conversational replies matter more than deep reasoning here.
-    output_config: { effort: "low" },
-    system: prospectSystem(scenario),
-    messages: toMessages(transcript),
-  });
+  const response = await withFallback((fallback) =>
+    getClient().beta.messages.create({
+      ...fallback,
+      model: MODEL,
+      max_tokens: 4000,
+      // Fast, conversational replies matter more than deep reasoning here.
+      output_config: { effort: "low" },
+      system: prospectSystem(scenario),
+      messages: toMessages(transcript),
+    }),
+  );
 
   if (response.stop_reason === "refusal") {
     throw new CoachError("The prospect couldn't respond to that. Try rephrasing.");
@@ -133,13 +152,15 @@ export async function scoreCall(scenario: Scenario, transcript: Turn[]): Promise
     throw new CoachError("There's nothing to score yet. Say something on the call first.");
   }
 
-  const response = await getClient().beta.messages.parse({
-    ...FALLBACK,
-    model: MODEL,
-    max_tokens: 16000,
-    output_config: { effort: "high", format: betaZodOutputFormat(Scorecard) },
-    messages: [{ role: "user", content: scoringPrompt(scenario, transcript) }],
-  });
+  const response = await withFallback((fallback) =>
+    getClient().beta.messages.parse({
+      ...fallback,
+      model: MODEL,
+      max_tokens: 16000,
+      output_config: { effort: "high", format: betaZodOutputFormat(Scorecard) },
+      messages: [{ role: "user", content: scoringPrompt(scenario, transcript) }],
+    }),
+  );
 
   if (response.stop_reason === "refusal") {
     throw new CoachError("This call couldn't be scored. Try another practice call.");
@@ -194,13 +215,15 @@ function clip(text: string, max: number): string {
 
 // Drafts a scenario from a trainer's one-line description. The trainer reviews and edits it before saving.
 export async function draftScenario(description: string): Promise<ScenarioInputValue> {
-  const response = await getClient().beta.messages.parse({
-    ...FALLBACK,
-    model: MODEL,
-    max_tokens: 16000,
-    output_config: { effort: "medium", format: betaZodOutputFormat(ScenarioDraft) },
-    messages: [{ role: "user", content: draftPrompt(description) }],
-  });
+  const response = await withFallback((fallback) =>
+    getClient().beta.messages.parse({
+      ...fallback,
+      model: MODEL,
+      max_tokens: 16000,
+      output_config: { effort: "medium", format: betaZodOutputFormat(ScenarioDraft) },
+      messages: [{ role: "user", content: draftPrompt(description) }],
+    }),
+  );
 
   if (response.stop_reason === "refusal") {
     throw new CoachError("That description couldn't be turned into a scenario. Try describing it differently.");
@@ -219,4 +242,18 @@ export async function draftScenario(description: string): Promise<ScenarioInputV
     successCriteria: criteria.length ? criteria : ["Completes the standard call flow professionally"],
     notApplicable: [...new Set(d.notApplicable)].filter((id) => (STEP_IDS as readonly string[]).includes(id)),
   };
+}
+
+// Smallest possible request, for the health check page.
+export async function pingAI(): Promise<{ model: string; fallback: boolean }> {
+  const response = await withFallback((fallback) =>
+    getClient().beta.messages.create({
+      ...fallback,
+      model: MODEL,
+      max_tokens: 256,
+      output_config: { effort: "low" },
+      messages: [{ role: "user", content: "Reply with the word OK." }],
+    }),
+  );
+  return { model: response.model, fallback: fallbackSupported };
 }

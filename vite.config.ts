@@ -16,19 +16,20 @@ function apiDevServer(): Plugin {
     configureServer(server: ViteDevServer) {
       server.middlewares.use('/api', async (req, res, next) => {
         const name = req.url?.replace(/^\//, '').split('?')[0]
-        if (name !== 'coach' && name !== 'classes' && name !== 'scenarios') return next()
-        if (req.method !== 'POST') {
+        if (!name || !['coach', 'classes', 'scenarios', 'health'].includes(name)) return next()
+        const mod = await server.ssrLoadModule(`/api/${name}.ts`)
+        const handler = req.method === 'POST' ? mod.POST : req.method === 'GET' ? mod.GET : undefined
+        if (!handler) {
           res.statusCode = 405
           res.end()
           return
         }
-        const mod = await server.ssrLoadModule(`/api/${name}.ts`)
         const request = new Request(`http://localhost/api/${name}`, {
-          method: 'POST',
+          method: req.method,
           headers: { 'content-type': 'application/json' },
-          body: await readBody(req),
+          body: req.method === 'POST' ? await readBody(req) : undefined,
         })
-        const response: Response = await mod.POST(request)
+        const response: Response = await handler(request)
         res.statusCode = response.status
         res.setHeader('content-type', response.headers.get('content-type') ?? 'application/json')
         res.end(await response.text())

@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react'
 import type { ClassInfo, JoinResult } from '../shared/classes.ts'
 import { getScenario, type Scenario } from '../shared/scenarios.ts'
 import { joinClass } from './api.ts'
@@ -75,6 +75,12 @@ export default function App() {
   const [joinedClass, setJoinedClass] = useState<ClassInfo | null>(loadJoinedClass)
   const [classScenarios, setClassScenarios] = useState<Scenario[]>([])
   const isDesktop = useIsDesktop()
+
+  // The marketing page is always light, whatever the visitor's system setting.
+  useLayoutEffect(() => {
+    if (signedIn) delete document.documentElement.dataset.theme
+    else document.documentElement.dataset.theme = 'light'
+  }, [signedIn])
 
   // Refresh the class's scenarios on the practice page, in case the trainer added or changed some.
   const classCode = joinedClass?.classCode

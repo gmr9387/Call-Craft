@@ -1098,14 +1098,11 @@ nav .link.active {
   margin: 0;
 }
 
-/* Marketing page (simple) */
+/* Marketing page (always light; see App.tsx) */
 .marketing {
-  max-width: 1080px;
+  max-width: 1160px;
   margin: 0 auto;
-  padding: 0 16px 32px;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+  padding: 0 24px 32px;
 }
 
 .mk-nav {
@@ -1115,16 +1112,28 @@ nav .link.active {
   padding: 20px 0;
 }
 
+.mk-nav nav {
+  display: flex;
+  gap: 28px;
+  align-items: center;
+}
+
+.mk-nav a {
+  color: var(--text-2);
+  text-decoration: none;
+  font-weight: 500;
+}
+
 .mk-hero {
   display: grid;
-  grid-template-columns: 1.15fr 1fr;
-  gap: 48px;
+  grid-template-columns: 1fr 1.05fr;
+  gap: 56px;
   align-items: center;
-  padding: 64px 0;
+  padding: 56px 0 48px;
 }
 
 .mk-hero h1 {
-  font-size: clamp(2.1rem, 5vw, 3.4rem);
+  font-size: clamp(2.1rem, 4.6vw, 3.3rem);
   letter-spacing: -0.02em;
   margin-bottom: 16px;
 }
@@ -1133,27 +1142,59 @@ nav .link.active {
   font-size: 1.2rem;
   color: var(--text-2);
   max-width: 44ch;
-  margin-bottom: 28px;
+}
+
+.mk-cta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 28px;
+}
+
+.mk-hero-visual {
+  position: relative;
+}
+
+.mk-hero-photo {
+  display: block;
+  width: 100%;
+  aspect-ratio: 5 / 4;
+  object-fit: cover;
+  object-position: 62% 40%;
+  border-radius: 16px;
+}
+
+/* With a photo, the example scorecard overlaps its lower-left corner. */
+.mk-hero-photo + .mk-preview {
+  position: absolute;
+  left: -32px;
+  bottom: -28px;
+  width: min(340px, 80%);
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.14);
 }
 
 .mk-preview {
   display: grid;
-  gap: 16px;
+  gap: 14px;
   position: relative;
 }
 
 .mk-preview-call {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+}
+
+.mk-preview .turn {
+  max-width: 92%;
 }
 
 .mk-preview-score {
   display: flex;
-  gap: 16px;
+  gap: 14px;
   align-items: center;
   border-top: 1px solid var(--border);
-  padding-top: 16px;
+  padding-top: 14px;
 }
 
 .mk-preview-score p {
@@ -1161,7 +1202,7 @@ nav .link.active {
 }
 
 .mk-score {
-  font-size: 2.6rem;
+  font-size: 2.4rem;
   font-weight: 700;
   line-height: 1;
 }
@@ -1173,9 +1214,34 @@ nav .link.active {
   margin: 0;
 }
 
+.mk-facts {
+  list-style: none;
+  margin: 40px 0 0;
+  padding: 18px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-around;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.mk-facts li::before {
+  content: '✓';
+  color: var(--good);
+  margin-right: 8px;
+  font-weight: 700;
+}
+
 .mk-section {
-  padding: 24px 0 48px;
-  flex: 1;
+  padding: 56px 0 24px;
+}
+
+.mk-section h2 {
+  font-size: 1.7rem;
+  margin-bottom: 24px;
 }
 
 .mk-steps {
@@ -1204,25 +1270,83 @@ nav .link.active {
   margin-bottom: 10px;
 }
 
+.mk-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 56px;
+  align-items: center;
+}
+
+/* Without the team photo, the text uses the full width. */
+.mk-split > div:only-child {
+  grid-column: 1 / -1;
+}
+
+.mk-team-photo {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  object-position: 60% 50%;
+  border-radius: 16px;
+}
+
+.mk-points {
+  margin: 0 0 28px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 14px;
+  color: var(--text-2);
+  font-size: 1.05rem;
+}
+
+.mk-points li {
+  padding-left: 28px;
+  position: relative;
+}
+
+.mk-points li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .mk-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  margin-top: 56px;
   padding-top: 20px;
   border-top: 1px solid var(--border);
 }
 
 @media (max-width: 860px) {
   .mk-hero,
-  .mk-steps {
+  .mk-steps,
+  .mk-split {
     grid-template-columns: 1fr;
   }
 
   .mk-hero {
     padding: 24px 0 40px;
     gap: 32px;
+  }
+
+  .mk-nav nav a {
+    display: none;
+  }
+
+  .mk-hero-photo + .mk-preview {
+    position: relative;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    margin-top: -40px;
   }
 }
 
