@@ -4,7 +4,6 @@ import { DIFFICULTIES, type Scenario } from '../../shared/scenarios.ts'
 import { draftScenario, saveScenario, type ScenarioFields } from '../api.ts'
 
 interface Props {
-  trainerKey: string
   classInfo: ClassInfo
   // The scenario being edited, or null for a new one.
   scenario: Scenario | null
@@ -42,7 +41,7 @@ const IDEAS = [
   'Someone who thinks online degrees are a scam',
 ]
 
-export default function ScenarioBuilder({ trainerKey, classInfo, scenario, onSaved, onCancel }: Props) {
+export default function ScenarioBuilder({ classInfo, scenario, onSaved, onCancel }: Props) {
   const [fields, setFields] = useState<ScenarioFields>(() => (scenario ? fieldsFrom(scenario) : EMPTY))
   const [description, setDescription] = useState('')
   const [drafting, setDrafting] = useState(false)
@@ -62,7 +61,7 @@ export default function ScenarioBuilder({ trainerKey, classInfo, scenario, onSav
     setDrafting(true)
     setError(null)
     try {
-      const draft = await draftScenario(trainerKey, description)
+      const draft = await draftScenario(classInfo.id, description)
       setFields({ ...draft, successCriteria: draft.successCriteria.length ? draft.successCriteria : [''] })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not write the scenario.')
@@ -76,7 +75,7 @@ export default function ScenarioBuilder({ trainerKey, classInfo, scenario, onSav
     setError(null)
     try {
       const cleaned = { ...fields, successCriteria: fields.successCriteria.map((g) => g.trim()).filter(Boolean) }
-      onSaved(await saveScenario(trainerKey, cleaned, scenario?.id), tryIt)
+      onSaved(await saveScenario(classInfo.id, cleaned, scenario?.id), tryIt)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the scenario.')
       setSaving(false)

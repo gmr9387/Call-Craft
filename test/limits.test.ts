@@ -1,33 +1,58 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { POST as auth } from '../api/auth.ts'
 import { POST as coach } from '../api/coach.ts'
 import { GET as health } from '../api/health.ts'
-import { agentTurn, call, fake, get, newIp, withEnv } from './helpers.ts'
+import { agentTurn, Browser, fake, get, hasDb, newIp, withEnv } from './helpers.ts'
+import { agent, newClass, trainer } from './people.ts'
 
 const reply = { action: 'reply', scenarioId: 'cooperative', transcript: agentTurn() }
 
-describe('spending limits', () => {
-  it('limits AI requests from one computer per hour', async () => {
+describe.skipIf(!hasDb)('spending limits (database)', () => {
+  let classCode: string
+
+  beforeAll(async () => {
+    classCode = (await newClass(await trainer())).classCode
+  })
+
+  it('limits AI requests per person, even from one shared office IP', async () => {
     await withEnv({ CALLCRAFT_HOURLY_CLIENT_LIMIT: '2' }, async () => {
-      const ip = newIp()
-      expect((await call(coach, reply, ip)).status).toBe(200)
-      expect((await call(coach, reply, ip)).status).toBe(200)
-      const blocked = await call(coach, reply, ip)
+      const a = await agent(classCode, 'Agent A')
+      expect((await a.post(coach, reply)).status).toBe(200)
+      expect((await a.post(coach, reply)).status).toBe(200)
+      const blocked = await a.post(coach, reply)
       expect(blocked.status).toBe(429)
       expect(blocked.body.error).toMatch(/little fast/)
-      // A different computer is not affected.
-      expect((await call(coach, reply, newIp())).status).toBe(200)
+
+      // Someone else at the same IP address is not affected.
+      const b = await agent(classCode, 'Agent B', a.ip)
+      expect((await b.post(coach, reply)).status).toBe(200)
     })
   })
 
   it('stops all AI requests at the daily budget, before calling Anthropic', async () => {
+    const a = await agent(classCode)
     await withEnv({ CALLCRAFT_DAILY_AI_LIMIT: '0' }, async () => {
-      const res = await call(coach, reply)
+      const res = await a.post(coach, reply)
       expect(res.status).toBe(429)
       expect(res.body.error).toMatch(/today's practice limit/)
       expect(fake().requests).toHaveLength(0)
     })
   })
 
+  it('slows down repeated wrong passwords from one computer', async () => {
+    await withEnv({ CALLCRAFT_HOURLY_SIGNIN_FAILURES: '2' }, async () => {
+      const b = new Browser()
+      const wrong = { action: 'login', email: 'nobody@example.com', password: 'wrong password' }
+      expect((await b.post(auth, wrong)).status).toBe(401)
+      expect((await b.post(auth, wrong)).status).toBe(401)
+      const blocked = await b.post(auth, wrong)
+      expect(blocked.status).toBe(429)
+      expect(blocked.body.error).toMatch(/Too many tries/)
+    })
+  })
+})
+
+describe('health check limits', () => {
   it('limits health-check pings', async () => {
     await withEnv({ CALLCRAFT_HOURLY_HEALTH_LIMIT: '1' }, async () => {
       const ip = newIp()

@@ -21,17 +21,22 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
   - Scenario goals
   - Five soft-skill scores
   - Coaching tips
+- **Accounts** (email and password), with three roles:
+  - **Admin**: invites trainers (and other admins), sees every class, resets passwords, and turns accounts off. The very first account on a new deployment becomes the admin.
+  - **Trainer**: creates classes, sees their agents and results, builds scenarios, and makes password reset links for their agents.
+  - **Agent**: signs up with a class code (or the class's sign-up link), practices, and sees their own calls on any computer.
+  - No email service is needed: invites and password resets are one-time links (valid 7 days) that the admin or trainer copies and sends however they like.
 - **Classes and trainer dashboard**:
-  - A trainer creates a class, for example one certification class. They get a **class code** to give agents and a private **trainer key**.
-  - Agents enter the class code on the Practice page. Each call they score is saved to the class by the server, so trainers see the score the server produced, not one sent from the browser.
-  - The trainer dashboard, opened with the trainer key from any device, shows:
+  - A trainer creates a class, for example one certification class, and shares its **class code** or **sign-up link** with agents.
+  - Every call an agent scores is saved by the server to the agent and their class, so trainers see the score the server produced, not one sent from the browser.
+  - Each class has a **Results** tab, an **Agents** tab (roster, calls, average score, last active, reset password, remove), and a **Scenarios** tab. Results show:
     - **By agent:** calls, average score, pass rate, compliance issues, most-missed call step, last practiced
     - **By scenario:** calls, average score, pass rate
     - **All calls:** each call, with its full scorecard and transcript
 - **Scenario builder** (trainers): describe a caller in one sentence and click **Write it for me**. The AI fills in the scenario: name, difficulty, what to practice, who the caller is and how they act, and what the agent must do to pass. The trainer edits anything, saves, and can **Try it** right away; trial calls aren't saved. Agents in the class see these scenarios under **From your trainer**. Trainers can hide a scenario from agents at any time.
-- **This device**: calls are also kept in the browser, so the app works without a class or a database.
-- **Marketing page and sign-in**: the site opens on a simple marketing page. **Sign in** currently lets anyone in with one click (development only; there are no accounts or passwords yet).
-- **Dashboard**: after signing in, a left menu (Dashboard, Practice, My calls, Trainer). The dashboard shows the next call to practice, your name and class, three numbers (calls, average score, calls passed), and your recent calls.
+- **Marketing page and sign-in**: the site opens on a simple marketing page with a **Sign in** button.
+- **Left menu by role**: agents see Dashboard, Practice, My calls. Trainers see Classes, Practice, My calls. Admins also see People. Everyone has Account (change password) and Sign out.
+- **Agent dashboard**: the next call to practice, your class, three numbers (calls, average score, calls passed), and your recent calls.
 - **Desktop only**: the app itself needs a window at least 900px wide, like an agent's real workstation. On phones it asks the person to use a computer. The marketing page works on any screen.
 - **Light theme everywhere**, regardless of the computer's dark mode setting.
 
@@ -44,12 +49,17 @@ The first version covers a generic outbound higher-ed inquiry call for a fiction
 | `shared/classes.ts` | Class and saved-call types |
 | `shared/scenarioInput.ts` | Scenario builder fields and validation (Zod) |
 | `server/coach.ts` | Claude calls: the prospect's next line (low effort, for fast replies) and the structured scorecard (high effort) |
-| `server/db.ts` | Postgres access: classes, saved calls, dashboard |
+| `shared/accounts.ts` | Roles and account types |
+| `server/auth.ts` | Passwords (scrypt), sessions (httpOnly cookie), invite and reset links, access checks |
+| `server/db.ts` | Postgres access: classes, saved calls, dashboards, scenarios |
 | `server/limits.ts` | Spending limits on AI requests |
-| `api/coach.ts` | `POST /api/coach`: `action: "reply" \| "score"`; `score` saves to the class when a class code is sent |
-| `api/classes.ts` | `POST /api/classes`: `action: "create" \| "join" \| "dashboard"` |
+| `api/auth.ts` | `GET /api/auth` (who is signed in); `POST`: `login`, `logout`, `setup`, `signup`, `link`, `accept`, `reset`, `password` |
+| `api/people.ts` | `POST /api/people`: `list`, `invite`, `reset-link`, `disable` |
+| `api/calls.ts` | `GET /api/calls`: your scored calls |
+| `api/coach.ts` | `POST /api/coach` (signed in): `action: "reply" \| "score"`; `score` saves the call to you and your class |
+| `api/classes.ts` | `POST /api/classes`: `list`, `create`, `dashboard`, `remove-agent`, `mine`, `join` |
 | `api/health.ts` | `GET /api/health`: is the AI key working, is the database connected |
-| `api/scenarios.ts` | `POST /api/scenarios` (needs the trainer key): `action: "draft" \| "create" \| "update" \| "archive"` |
+| `api/scenarios.ts` | `POST /api/scenarios` (trainers and admins of the class): `action: "draft" \| "create" \| "update" \| "archive"` |
 | `db/schema.sql` | Database schema (safe to re-run) |
 | `src/` | React UI |
 
@@ -68,7 +78,7 @@ Every AI request (a caller reply, a score, a scenario draft, a health check) is 
 | Setting | Default | What it limits |
 |---|---|---|
 | `CALLCRAFT_DAILY_AI_LIMIT` | 1500 | AI requests per day, whole site |
-| `CALLCRAFT_HOURLY_CLIENT_LIMIT` | 120 | AI requests per hour from one computer |
+| `CALLCRAFT_HOURLY_CLIENT_LIMIT` | 120 | AI requests per hour from one person (a whole training room behind one office IP address doesn't share a limit) |
 | `CALLCRAFT_DAILY_DRAFT_LIMIT` | 25 | "Write it for me" drafts per class per day |
 | `CALLCRAFT_HOURLY_HEALTH_LIMIT` | 10 | `/api/health` AI checks per hour from one computer |
 
@@ -76,7 +86,7 @@ A practice call is usually 10–20 requests, so the default daily limit covers r
 
 ## Database
 
-Class dashboards need Postgres. Without `DATABASE_URL` everything else still works, and calls are kept on each device only.
+CallCraft needs Postgres for accounts, classes, and saved calls.
 
 1. Create a Postgres database. On Supabase, use a new project just for CallCraft.
 2. Run `db/schema.sql` against it. On Supabase, paste it into the SQL editor.
@@ -86,13 +96,21 @@ Row-level security is on with no policies, so Supabase's public REST API can't r
 
 **Updating an existing database:** re-run `db/schema.sql`. It only adds what's missing.
 
-**Access model (pilot-grade):** there are no user logins yet, and "Sign in" is a one-click bypass. Anyone with a class code can save calls to that class. Anyone with the trainer key can view all of that class's calls, so treat the key like a password. Real trainer and agent accounts are the next step before wider use.
+## Accounts and security
+
+- **First run:** on a brand-new deployment, the site opens a **Set up CallCraft** page. The first account made there becomes the admin, and the page never appears again. Do this right after deploying.
+- **Passwords** are stored as scrypt hashes. **Sessions** are a random token in an httpOnly, SameSite=Lax cookie (Secure on https), valid 30 days; only a hash of the token is stored.
+- **Links** for invites and password resets work once and expire after 7 days. Making a new reset link cancels the old one. Using a reset link signs the person out everywhere else.
+- **Turning an account off** signs it out everywhere and blocks sign-in until an admin turns it back on.
+- **Wrong passwords** and wrong class codes are limited per computer (`CALLCRAFT_HOURLY_SIGNIN_FAILURES`, default 20 an hour).
+- The API only accepts JSON requests, so other websites can't submit forms as a signed-in person.
+- Agents only see their own calls. Trainers only see classes they run. Admins see everything.
 
 ## Run locally
 
 ```bash
 npm install
-cp .env.example .env   # then set ANTHROPIC_API_KEY (and DATABASE_URL for classes)
+cp .env.example .env   # then set ANTHROPIC_API_KEY and DATABASE_URL
 npm run dev
 ```
 
@@ -124,7 +142,8 @@ GitHub Actions runs lint, build, and all tests (with a Postgres service) on ever
 
 ## Next steps
 
-- Real sign-in (trainer and agent accounts) in place of the one-click bypass and shared codes and keys.
-- Custom call flows, so scenarios can cover programs other than the higher-ed inquiry call.
-- Let trainers add their own scenarios and scripts (under the client's permission during a pilot).
+- Call flows built in the app, so trainers can set up any program's steps and rules without code.
+- An admin page for AI usage, limits, and system health.
+- Download class results as a spreadsheet.
+- Built-in help and a first-time walkthrough for trainers.
 - Real-time voice calls instead of browser speech.

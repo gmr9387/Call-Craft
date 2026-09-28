@@ -1,6 +1,7 @@
+import { canManageClass, requireUser, type User } from "../server/auth.js";
 import { prospectReply, scoreCall } from "../server/coach.js";
-import { DbNotConfiguredError, saveAttempt, scenarioForClass } from "../server/db.js";
-import { cleanText, errorResponse, json, readJson } from "../server/http.js";
+import { classById, saveAttempt, scenarioWithClass } from "../server/db.js";
+import { errorResponse, json, readJson } from "../server/http.js";
 import { checkUsage } from "../server/limits.js";
 import { getScenario, isCustomScenarioId, type Scenario, type Turn } from "../shared/scenarios.js";
 
@@ -25,17 +26,22 @@ function parseTranscript(value: unknown): Turn[] | null {
   return turns;
 }
 
-// Built-in scenarios resolve by slug. Trainer-built scenarios need the class code of their class.
-async function resolveScenario(scenarioId: unknown, classCode: string | null): Promise<Scenario | null> {
+// Built-in scenarios resolve by slug. A trainer-built scenario can be used by agents in its
+// class, and by the trainers and admins who manage that class.
+async function resolveScenario(user: User, scenarioId: unknown): Promise<Scenario | null> {
   if (typeof scenarioId !== "string") return null;
   if (!isCustomScenarioId(scenarioId)) return getScenario(scenarioId) ?? null;
-  return classCode ? scenarioForClass(scenarioId, classCode) : null;
+  const found = await scenarioWithClass(scenarioId);
+  if (!found) return null;
+  const allowed =
+    (user.role === "agent" && user.classId === found.classId) || (await canManageClass(user, found.classId));
+  return allowed ? found.scenario : null;
 }
 
 // Simulator endpoint: the AI prospect's next line, or the call scorecard.
-// When a class code is sent with "score", the server saves the scored call to that class,
+// Scored calls are saved by the server to the signed-in person (and an agent's class),
 // so the score a trainer sees is the one the server produced. Trainer preview calls send
-// saveToClass: false so they don't show up as agent calls.
+// save: false so they don't show up as practice calls.
 export async function POST(request: Request): Promise<Response> {
   const body = await readJson(request);
   if (!body) return json({ error: "Invalid JSON body." }, 400);
@@ -44,31 +50,28 @@ export async function POST(request: Request): Promise<Response> {
   if (!transcript) return json({ error: "Invalid transcript." }, 400);
 
   try {
-    const classCodeForScenario = cleanText(body.classCode, 20);
-    const scenario = await resolveScenario(body.scenarioId, classCodeForScenario);
+    const user = await requireUser(request);
+    const scenario = await resolveScenario(user, body.scenarioId);
     if (!scenario) return json({ error: "Unknown scenario." }, 400);
+    const classId = user.role === "agent" ? user.classId : null;
 
     if (body.action === "reply") {
-      await checkUsage("reply", request, classCodeForScenario);
+      await checkUsage("reply", request, null, user.id);
       return json({ text: await prospectReply(scenario, transcript) });
     }
     if (body.action !== "score") {
       return json({ error: "Unknown action." }, 400);
     }
 
-    await checkUsage("score", request, classCodeForScenario);
+    await checkUsage("score", request, null, user.id);
     const scorecard = await scoreCall(scenario, transcript);
-    if (!body.classCode || body.saveToClass === false) {
+    if (body.save === false) {
       return json({ scorecard, saved: false });
     }
 
-    const classCode = cleanText(body.classCode, 20);
-    const agentName = cleanText(body.agentName, 120);
     const startedAt = typeof body.startedAt === "string" ? new Date(body.startedAt) : null;
     const durationSec = Number(body.durationSec);
     if (
-      !classCode ||
-      !agentName ||
       !startedAt ||
       Number.isNaN(startedAt.getTime()) ||
       !Number.isInteger(durationSec) ||
@@ -78,14 +81,17 @@ export async function POST(request: Request): Promise<Response> {
       return json({
         scorecard,
         saved: false,
-        saveError: "The call details were incomplete, so it wasn't saved to your class.",
+        saveError: "The call details were incomplete, so it wasn't saved.",
       });
     }
 
     try {
+      // The class may have been deleted since the agent joined it.
+      const cls = classId ? await classById(classId) : null;
       const id = await saveAttempt({
-        classCode,
-        agentName,
+        userId: user.id,
+        classId: cls?.id ?? null,
+        agentName: user.name,
         scenarioId: scenario.id,
         scenarioTitle: scenario.title,
         startedAt: startedAt.toISOString(),
@@ -93,20 +99,11 @@ export async function POST(request: Request): Promise<Response> {
         transcript,
         scorecard,
       });
-      return id
-        ? json({ scorecard, saved: true, attemptId: id })
-        : json({
-            scorecard,
-            saved: false,
-            saveError: "That class code wasn't found, so the call wasn't saved to a class.",
-          });
+      return json({ scorecard, saved: true, attemptId: id, className: cls?.name ?? null });
     } catch (error) {
       // Never lose the scorecard because the save failed.
-      if (error instanceof DbNotConfiguredError) {
-        return json({ scorecard, saved: false, saveError: "Class saving isn't set up on this server yet." });
-      }
       console.error("Saving attempt failed:", error);
-      return json({ scorecard, saved: false, saveError: "The call was scored but couldn't be saved to your class." });
+      return json({ scorecard, saved: false, saveError: "The call was scored but couldn't be saved." });
     }
   } catch (error) {
     return errorResponse(error);

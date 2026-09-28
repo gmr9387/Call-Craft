@@ -1,16 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { CALL_FLOW, END_MARKERS, type Scenario, type Turn } from '../../shared/scenarios.ts'
 import { getProspectReply, scoreCall } from '../api.ts'
-import { saveAttempt, type Attempt } from '../history.ts'
-import type { ClassInfo } from '../../shared/classes.ts'
+import type { Attempt } from '../history.ts'
 import CallerAvatar from './CallerAvatar.tsx'
 import { canListen, canSpeak, createRecognition, speak, stopSpeaking, type Recognition } from '../speech.ts'
 
 interface Props {
   scenario: Scenario
   agentName: string
-  classInfo: ClassInfo | null
-  // Trainer test call: uses the class for trainer-built scenarios but isn't saved to it.
+  // Trainer test call: not saved anywhere.
   preview?: boolean
   onScored: (attempt: Attempt, saveNote: SaveNote) => void
   onCancel: () => void
@@ -36,7 +34,7 @@ function formatTime(sec: number): string {
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
 }
 
-export default function CallScreen({ scenario, agentName, classInfo, preview = false, onScored, onCancel }: Props) {
+export default function CallScreen({ scenario, agentName, preview = false, onScored, onCancel }: Props) {
   const [transcript, setTranscript] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [waiting, setWaiting] = useState(false)
@@ -112,7 +110,7 @@ export default function CallScreen({ scenario, agentName, classInfo, preview = f
     setInput('')
     setWaiting(true)
     try {
-      const reply = stripMarkers(await getProspectReply(scenario.id, next, classInfo?.classCode))
+      const reply = stripMarkers(await getProspectReply(scenario.id, next))
       if (reply.text) {
         setTranscript([...next, { speaker: 'prospect', text: reply.text }])
         if (voiceOut) speak(reply.text)
@@ -138,17 +136,14 @@ export default function CallScreen({ scenario, agentName, classInfo, preview = f
     setPhase('scoring')
     setError(null)
     try {
-      const name = agentName.trim()
       const result = await scoreCall(scenario.id, transcript, {
-        classCode: classInfo?.classCode,
-        saveToClass: !!classInfo && !preview,
-        agentName: name,
+        save: !preview,
         startedAt,
         durationSec: elapsed,
       })
       const attempt: Attempt = {
         id: result.attemptId ?? crypto.randomUUID(),
-        agentName: name,
+        agentName,
         scenarioId: scenario.id,
         scenarioTitle: scenario.title,
         startedAt,
@@ -156,14 +151,13 @@ export default function CallScreen({ scenario, agentName, classInfo, preview = f
         transcript,
         scorecard: result.scorecard,
       }
-      if (!preview) saveAttempt(attempt)
       const note: SaveNote = preview
-        ? { ok: true, text: "Preview call: not saved to the class or this device's history." }
-        : !classInfo
-          ? { ok: true, text: 'Saved on this device. Join a class to share results with your trainer.' }
-          : result.saved
-            ? { ok: true, text: `Saved to ${classInfo.name}. Your trainer can see this call.` }
-            : { ok: false, text: result.saveError ?? "This call wasn't saved to your class." }
+        ? { ok: true, text: 'Preview call: not saved.' }
+        : !result.saved
+          ? { ok: false, text: result.saveError ?? "This call wasn't saved." }
+          : result.className
+            ? { ok: true, text: `Saved to ${result.className}. Your trainer can see this call.` }
+            : { ok: true, text: 'Saved to My calls.' }
       onScored(attempt, note)
     } catch (e) {
       setPhase('live')

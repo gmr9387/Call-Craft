@@ -1,16 +1,15 @@
 import type { ClassInfo, JoinResult } from '../../shared/classes.ts'
 import { SCENARIOS, type Scenario } from '../../shared/scenarios.ts'
+import type { Me } from '../../shared/accounts.ts'
 import { attemptTitle, type Attempt } from '../history.ts'
 import { ClassJoin } from './Home.tsx'
+import { useMyCalls } from '../useMyCalls.ts'
 
 interface Props {
-  agentName: string
-  onNameChange: (name: string) => void
+  user: Me
   classInfo: ClassInfo | null
   classScenarios: Scenario[]
-  attempts: Attempt[]
   onJoin: (result: JoinResult) => void
-  onLeave: () => void
   onStart: (scenario: Scenario) => void
   onPractice: () => void
   onMyCalls: () => void
@@ -26,20 +25,18 @@ function nextUp(scenarios: Scenario[], attempts: Attempt[]): Scenario {
 }
 
 export default function Dashboard({
-  agentName,
-  onNameChange,
+  user,
   classInfo,
   classScenarios,
-  attempts,
   onJoin,
-  onLeave,
   onStart,
   onPractice,
   onMyCalls,
   onOpen,
 }: Props) {
-  const firstName = agentName.trim().split(/\s+/)[0]
-  const hasName = !!firstName
+  const firstName = user.name.split(' ')[0]
+  const { attempts: loaded, error } = useMyCalls()
+  const attempts = loaded ?? []
   const next = nextUp([...classScenarios, ...SCENARIOS], attempts)
   const recent = attempts.slice(0, 5)
   const passes = attempts.filter((a) => a.scorecard.result === 'pass').length
@@ -50,7 +47,7 @@ export default function Dashboard({
   return (
     <div className="dashboard">
       <div className="page-head">
-        <h1>{hasName ? `Welcome back, ${firstName}` : 'Welcome to CallCraft'}</h1>
+        <h1>Welcome, {firstName}</h1>
         <p className="muted">Here's where you are. Pick up where you left off.</p>
       </div>
 
@@ -61,19 +58,8 @@ export default function Dashboard({
             <p className="eyebrow">Next up</p>
             <h2>{next.title}</h2>
             <p>{next.focus}</p>
-            {!hasName && (
-              <label className="name-field">
-                <span>Type your name to start</span>
-                <input
-                  value={agentName}
-                  onChange={(e) => onNameChange(e.target.value)}
-                  placeholder="First and last name"
-                  autoComplete="name"
-                />
-              </label>
-            )}
             <div className="card-actions">
-              <button className="primary big" disabled={!hasName} onClick={() => onStart(next)}>
+              <button className="primary big" onClick={() => onStart(next)}>
                 Start this call
               </button>
               <button className="secondary big" onClick={onPractice}>
@@ -85,16 +71,12 @@ export default function Dashboard({
 
         <section className="card profile-card">
           <h2>You</h2>
-          <label className="name-field">
-            <span>Your name</span>
-            <input
-              value={agentName}
-              onChange={(e) => onNameChange(e.target.value)}
-              placeholder="First and last name"
-              autoComplete="name"
-            />
-          </label>
-          <ClassJoin classInfo={classInfo} onJoin={onJoin} onLeave={onLeave} />
+          <p>
+            <strong>{user.name}</strong>
+            <br />
+            <span className="muted small">{user.email}</span>
+          </p>
+          <ClassJoin classInfo={classInfo} onJoin={onJoin} />
         </section>
       </div>
 
@@ -125,7 +107,13 @@ export default function Dashboard({
             </button>
           )}
         </div>
-        {recent.length === 0 ? (
+        {error ? (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        ) : !loaded ? (
+          <p className="muted">Loading your calls…</p>
+        ) : recent.length === 0 ? (
           <p className="muted">No calls yet. Your scores will show up here after your first call.</p>
         ) : (
           <ul className="recent-list">
