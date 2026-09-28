@@ -67,6 +67,8 @@ export function clientId(request: Request, userId: string | null = null): string
 // In-memory fallback when there's no database. Per server instance, so looser, but still a guard.
 const memory: { kind: LoggedKind; client: string; classCode: string | null; at: number }[] = [];
 
+const utcDay = (now: number) => new Date(now).toISOString().slice(0, 10);
+
 function startOfUtcDay(now: number): number {
   const d = new Date(now);
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
@@ -98,23 +100,23 @@ async function countUsage(client: string, classCode: string | null, memoryOnly =
     };
   }
 
+  // Today's total comes from the running daily count; the rest use small indexed ranges
+  // (this person's last hour, this class's drafts today), so checks stay fast at any volume.
   const [row] = await sql`
     select
-      count(*) filter (where created_at >= ${new Date(dayStart)} and kind <> 'signin')::int as total,
-      count(*) filter (
-        where client_hash = ${client} and created_at >= ${new Date(hourAgo)} and kind not in ('health', 'signin')
-      )::int as client,
-      count(*) filter (
-        where kind = 'draft' and class_code = ${classCode} and created_at >= ${new Date(dayStart)}
-      )::int as class_drafts,
-      count(*) filter (
-        where client_hash = ${client} and created_at >= ${new Date(hourAgo)} and kind = 'health'
-      )::int as client_health,
-      count(*) filter (
-        where client_hash = ${client} and created_at >= ${new Date(hourAgo)} and kind = 'signin'
-      )::int as client_signin
-    from ai_usage
-    where created_at >= ${new Date(Math.min(dayStart, hourAgo))}
+      (select coalesce(sum(count), 0)::int from ai_usage_daily
+        where day = ${utcDay(now)}::date and kind <> 'signin') as total,
+      mine.client, mine.client_health, mine.client_signin,
+      (select count(*)::int from ai_usage
+        where kind = 'draft' and class_code = ${classCode} and created_at >= ${new Date(dayStart)}) as class_drafts
+    from (
+      select
+        count(*) filter (where kind not in ('health', 'signin'))::int as client,
+        count(*) filter (where kind = 'health')::int as client_health,
+        count(*) filter (where kind = 'signin')::int as client_signin
+      from ai_usage
+      where client_hash = ${client} and created_at >= ${new Date(hourAgo)}
+    ) mine
   `;
   return {
     total: row.total,
@@ -139,10 +141,17 @@ async function recordUsage(
     while (memory.length && memory[0].at < cutoff) memory.shift();
     return;
   }
-  await sql`insert into ai_usage (kind, client_hash, class_code) values (${kind}, ${client}, ${classCode})`;
-  // Occasionally clear out rows older than two days.
+  await sql`
+    with logged as (
+      insert into ai_usage (kind, client_hash, class_code) values (${kind}, ${client}, ${classCode})
+    )
+    insert into ai_usage_daily (day, kind, count) values (${utcDay(Date.now())}::date, ${kind}, 1)
+    on conflict (day, kind) do update set count = ai_usage_daily.count + 1
+  `;
+  // Occasionally clear out detail older than two days (daily counts are kept for a year).
   if (Math.random() < 0.02) {
     await sql`delete from ai_usage where created_at < now() - interval '2 days'`;
+    await sql`delete from ai_usage_daily where day < current_date - 400`;
   }
 }
 
@@ -229,16 +238,15 @@ export async function usageSummary(): Promise<UsageSummary> {
   const weekStart = dayStart - 6 * 24 * 60 * 60 * 1000;
   const [byKind, [hour], byDay] = await Promise.all([
     sql`
-      select kind, count(*)::int as count from ai_usage
-      where created_at >= ${new Date(dayStart)} and kind <> 'signin' group by kind
+      select kind, count from ai_usage_daily where day = ${utcDay(now)}::date and kind <> 'signin'
     `,
     sql`
       select count(*)::int as count from ai_usage
       where created_at >= ${new Date(now - 60 * 60 * 1000)} and kind <> 'signin'
     `,
     sql`
-      select to_char(date_trunc('day', created_at at time zone 'UTC'), 'YYYY-MM-DD') as day, count(*)::int as count
-      from ai_usage where created_at >= ${new Date(weekStart)} and kind <> 'signin'
+      select to_char(day, 'YYYY-MM-DD') as day, sum(count)::int as count
+      from ai_usage_daily where day >= ${utcDay(weekStart)}::date and kind <> 'signin'
       group by 1
     `,
   ]);
@@ -249,4 +257,26 @@ export async function usageSummary(): Promise<UsageSummary> {
     return { day, count: counts.get(day) ?? 0 };
   });
   return { today, lastHour: hour.count, week };
+}
+
+// A warning for trainers and admins once today's AI use passes 80% of the daily limit, or null.
+export async function dailyUsageWarning(): Promise<string | null> {
+  const sql = dbOrNull();
+  if (!sql) return null;
+  try {
+    const { dailyTotal } = await spendingLimits();
+    const [row] = await sql`
+      select coalesce(sum(count), 0)::int as used from ai_usage_daily
+      where day = ${utcDay(Date.now())}::date and kind <> 'signin'
+    `;
+    if (dailyTotal <= 0) return "Practice is paused: the daily AI limit is set to 0.";
+    const pct = Math.floor((row.used / dailyTotal) * 100);
+    if (pct < 80) return null;
+    return pct >= 100
+      ? `Today's AI limit is used up (${row.used.toLocaleString()} of ${dailyTotal.toLocaleString()}). Practice calls stop until midnight UTC unless an admin raises the limit.`
+      : `Today's AI use is at ${pct}% of the daily limit (${row.used.toLocaleString()} of ${dailyTotal.toLocaleString()}).`;
+  } catch (error) {
+    console.error("Checking today's usage failed:", error);
+    return null;
+  }
 }

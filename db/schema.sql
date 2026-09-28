@@ -221,3 +221,22 @@ begin
     revoke execute on function public.rls_auto_enable() from public, anon, authenticated;
   end if;
 end $$;
+
+-- ---- Usage counting at scale ----
+-- A running count per day and kind, so checking "how much AI today" stays one small lookup
+-- no matter how many requests there have been. (ai_usage keeps the per-person detail.)
+create table if not exists ai_usage_daily (
+  day date not null,
+  kind text not null,
+  count integer not null default 0,
+  primary key (day, kind)
+);
+
+alter table ai_usage_daily enable row level security;
+
+-- Start the counts from what's already logged (only fills days that have no count yet).
+insert into ai_usage_daily (day, kind, count)
+  select (created_at at time zone 'UTC')::date, kind, count(*)::int from ai_usage group by 1, 2
+  on conflict (day, kind) do nothing;
+
+create index if not exists ai_usage_draft_idx on ai_usage (class_code, created_at) where kind = 'draft';

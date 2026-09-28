@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { CoachError } from "./coach.js";
-import { DbNotConfiguredError, ScenarioLimitError } from "./db.js";
+import { DbNotConfiguredError, EditConflictError, ScenarioLimitError } from "./db.js";
 import { UsageLimitError } from "./limits.js";
 import { AccountInputError, AuthError } from "./auth.js";
 import { TamperedCallError } from "./signing.js";
@@ -48,6 +48,9 @@ export function errorResponse(error: unknown): Response {
   if (error instanceof UsageLimitError) {
     return json({ error: error.message }, 429);
   }
+  if (error instanceof EditConflictError) {
+    return json({ error: error.message }, 409);
+  }
   if (error instanceof ScenarioLimitError) {
     return json({ error: error.message }, 409);
   }
@@ -58,8 +61,9 @@ export function errorResponse(error: unknown): Response {
     console.error("Anthropic authentication failed:", error.message);
     return json({ error: "The Anthropic API key was rejected. Check ANTHROPIC_API_KEY in Vercel and redeploy." }, 500);
   }
-  if (error instanceof Anthropic.RateLimitError) {
-    return json({ error: "Too many requests right now. Wait a moment and try again." }, 429);
+  if (error instanceof Anthropic.RateLimitError || (error instanceof Anthropic.APIError && error.status === 529)) {
+    // A busy moment (lots of people practicing, or the AI service overloaded): try again shortly.
+    return json({ error: "The AI is very busy right now. Wait a few seconds and try again." }, 503);
   }
   if (error instanceof Anthropic.APIError) {
     console.error(`Anthropic API error ${error.status}:`, error.message);

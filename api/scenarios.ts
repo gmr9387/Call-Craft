@@ -58,7 +58,9 @@ export async function POST(request: Request): Promise<Response> {
           return json({ scenario });
         }
         const id = typeof body.id === "string" && isCustomScenarioId(body.id) ? body.id : null;
-        const scenario = id ? await updateScenario(flowId, id, input) : null;
+        const expected =
+          typeof body.updatedAt === "string" && !Number.isNaN(Date.parse(body.updatedAt)) ? body.updatedAt : undefined;
+        const scenario = id ? await updateScenario(flowId, id, input, expected) : null;
         if (!scenario) return json({ error: NOT_FOUND }, 404);
         await logActivity(user, "Edited scenario", `${scenario.title} (${flow.name})`);
         return json({ scenario });

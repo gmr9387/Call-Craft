@@ -61,7 +61,8 @@ async function runWithFallback<T>(model: string, run: (options: FallbackOptions)
 function serviceProblem(error: unknown): string | null {
   if (error instanceof CoachError && error.message.startsWith(NOT_CONFIGURED)) return error.message;
   if (error instanceof Anthropic.AuthenticationError) return "The Anthropic API key was rejected.";
-  if (error instanceof Anthropic.APIError && error.status !== 429) {
+  // Busy moments (rate limits, overload) pass on their own, so they don't raise the admin warning.
+  if (error instanceof Anthropic.APIError && error.status !== 429 && error.status !== 529) {
     const body = error.error as { error?: { message?: unknown } } | undefined;
     const reason = typeof body?.error?.message === "string" ? body.error.message : error.message;
     return `Anthropic returned ${error.status ?? "an error"}: ${reason}`;
@@ -89,11 +90,22 @@ function getClient(): Anthropic {
     throw new CoachError(`${NOT_CONFIGURED}: set ANTHROPIC_API_KEY on the server.`);
   }
   // A stuck request gives up after a minute and retries once, so calls never hang.
-  client ??= new Anthropic({ apiKey, authToken: env("ANTHROPIC_AUTH_TOKEN"), timeout: 60_000, maxRetries: 1 });
+  client ??= new Anthropic({ apiKey, authToken: env("ANTHROPIC_AUTH_TOKEN"), timeout: 50_000, maxRetries: 1 });
   return client;
 }
 
 export class CoachError extends Error {}
+
+// Time limits and retries for each kind of request. When many people practice at once the AI
+// service can briefly slow down or ask us to wait (rate limits); the SDK then retries, waiting as
+// the service asks. Every budget below fits inside the 120-second server limit in vercel.json,
+// so a request never gets cut off halfway.
+// Replies: short and frequent, so a quick time limit and two retries (up to about 80 seconds).
+const REPLY_OPTIONS = { timeout: 25_000, maxRetries: 2 };
+// Scoring and drafts: longer answers, so more time per try and one retry (up to about 105 seconds).
+const SLOW_OPTIONS = { timeout: 50_000, maxRetries: 1 };
+// Health check: should answer quickly or report a problem.
+const PING_OPTIONS = { timeout: 15_000, maxRetries: 0 };
 
 const NOT_CONFIGURED = "The AI service isn't configured yet";
 
@@ -144,7 +156,7 @@ export async function prospectReply(scenario: Scenario, flow: CallFlow, transcri
       ...replyConfig(REPLY_MODEL, "low"),
       system: prospectSystem(scenario, flow),
       messages: toMessages(transcript),
-    }),
+    }, REPLY_OPTIONS),
   );
 
   if (response.stop_reason === "refusal") {
@@ -219,7 +231,7 @@ export async function scoreCall(scenario: Scenario, flow: CallFlow, transcript: 
       max_tokens: 16000,
       output_config: { ...effortFor(SCORING_MODEL, "high"), format: betaZodOutputFormat(Scorecard) },
       messages: [{ role: "user", content: scoringPrompt(scenario, flow, transcript) }],
-    }),
+    }, SLOW_OPTIONS),
   );
 
   if (response.stop_reason === "refusal") {
@@ -284,7 +296,7 @@ export async function draftScenario(description: string, flow: CallFlow): Promis
       max_tokens: 16000,
       output_config: { ...effortFor(SCORING_MODEL, "medium"), format: betaZodOutputFormat(ScenarioDraft) },
       messages: [{ role: "user", content: draftPrompt(description, flow) }],
-    }),
+    }, SLOW_OPTIONS),
   );
 
   if (response.stop_reason === "refusal") {
@@ -334,7 +346,7 @@ export async function draftFlow(description: string): Promise<FlowInputValue> {
       max_tokens: 16000,
       output_config: { ...effortFor(SCORING_MODEL, "medium"), format: betaZodOutputFormat(FlowDraft) },
       messages: [{ role: "user", content: flowDraftPrompt(description) }],
-    }),
+    }, SLOW_OPTIONS),
   );
 
   if (response.stop_reason === "refusal") {
@@ -367,7 +379,7 @@ export async function pingAI(): Promise<{ model: string; scoringModel: string; f
       max_tokens: 256,
       ...replyConfig(REPLY_MODEL, "low"),
       messages: [{ role: "user", content: "Reply with the word OK." }],
-    }),
+    }, PING_OPTIONS),
   );
   return {
     model: response.model,

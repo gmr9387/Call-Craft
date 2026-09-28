@@ -23,6 +23,8 @@ export interface AuthStatus {
   needsSetup: boolean;
   // For trainers and admins: what went wrong if the AI stopped working in the last hour.
   aiProblem?: string | null;
+  // For trainers and admins: today's AI use is near or at the daily limit.
+  usageWarning?: string | null;
 }
 
 // What a one-time link is for, shown before the person uses it.
