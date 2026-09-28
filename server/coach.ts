@@ -66,7 +66,8 @@ function getClient(): Anthropic {
   if (!apiKey && !env("ANTHROPIC_AUTH_TOKEN")) {
     throw new CoachError("The AI service isn't configured yet: set ANTHROPIC_API_KEY on the server.");
   }
-  client ??= new Anthropic({ apiKey, authToken: env("ANTHROPIC_AUTH_TOKEN") });
+  // A stuck request gives up after a minute and retries once, so calls never hang.
+  client ??= new Anthropic({ apiKey, authToken: env("ANTHROPIC_AUTH_TOKEN"), timeout: 60_000, maxRetries: 1 });
   return client;
 }
 

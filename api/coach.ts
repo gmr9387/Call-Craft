@@ -1,6 +1,7 @@
 import { prospectReply, scoreCall } from "../server/coach.js";
 import { DbNotConfiguredError, saveAttempt, scenarioForClass } from "../server/db.js";
 import { cleanText, errorResponse, json, readJson } from "../server/http.js";
+import { checkUsage } from "../server/limits.js";
 import { getScenario, isCustomScenarioId, type Scenario, type Turn } from "../shared/scenarios.js";
 
 const MAX_TURNS = 80;
@@ -48,12 +49,14 @@ export async function POST(request: Request): Promise<Response> {
     if (!scenario) return json({ error: "Unknown scenario." }, 400);
 
     if (body.action === "reply") {
+      await checkUsage("reply", request, classCodeForScenario);
       return json({ text: await prospectReply(scenario, transcript) });
     }
     if (body.action !== "score") {
       return json({ error: "Unknown action." }, 400);
     }
 
+    await checkUsage("score", request, classCodeForScenario);
     const scorecard = await scoreCall(scenario, transcript);
     if (!body.classCode || body.saveToClass === false) {
       return json({ scorecard, saved: false });

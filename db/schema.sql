@@ -56,3 +56,18 @@ create table if not exists scenarios (
 create index if not exists scenarios_class_idx on scenarios (class_id, created_at);
 
 alter table scenarios enable row level security;
+
+-- AI usage log, used to enforce spending limits (see server/limits.ts).
+-- Stores a salted hash of the caller's IP address, never the address itself.
+create table if not exists ai_usage (
+  id bigserial primary key,
+  kind text not null check (kind in ('reply', 'score', 'draft', 'health')),
+  client_hash text not null,
+  class_code text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists ai_usage_created_idx on ai_usage (created_at);
+create index if not exists ai_usage_client_idx on ai_usage (client_hash, created_at);
+
+alter table ai_usage enable row level security;

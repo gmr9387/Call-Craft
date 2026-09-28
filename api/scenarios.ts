@@ -1,5 +1,6 @@
 import { draftScenario } from "../server/coach.js";
-import { createScenario, isTrainerKeyValid, setScenarioArchived, updateScenario } from "../server/db.js";
+import { classCodeForTrainer, createScenario, setScenarioArchived, updateScenario } from "../server/db.js";
+import { checkUsage } from "../server/limits.js";
 import { cleanText, errorResponse, json, readJson } from "../server/http.js";
 import { ScenarioInput } from "../shared/scenarioInput.js";
 import { isCustomScenarioId } from "../shared/scenarios.js";
@@ -23,7 +24,9 @@ export async function POST(request: Request): Promise<Response> {
         const description = cleanText(body.description, 1000);
         if (!description) return json({ error: "Describe the scenario in a sentence or two." }, 400);
         // Checked first so the AI can't be used without a real trainer key.
-        if (!(await isTrainerKeyValid(trainerKey))) return json({ error: NOT_FOUND }, 404);
+        const classCode = await classCodeForTrainer(trainerKey);
+        if (!classCode) return json({ error: NOT_FOUND }, 404);
+        await checkUsage("draft", request, classCode);
         return json({ draft: await draftScenario(description) });
       }
       case "create":

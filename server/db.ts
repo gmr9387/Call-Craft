@@ -22,6 +22,11 @@ function db(): postgres.Sql {
   return sql;
 }
 
+// The shared connection, or null when no database is configured.
+export function dbOrNull(): postgres.Sql | null {
+  return env("DATABASE_URL") ? db() : null;
+}
+
 export async function pingDb(): Promise<void> {
   await db()`select 1 from classes limit 1`;
 }
@@ -211,8 +216,9 @@ export async function scenarioForClass(id: string, classCode: string): Promise<S
   return rows[0] ? toScenario(rows[0]) : null;
 }
 
-export async function isTrainerKeyValid(trainerKey: string): Promise<boolean> {
-  return (await classForTrainer(trainerKey)) !== null;
+// The class code for a trainer key, or null when the key isn't recognized.
+export async function classCodeForTrainer(trainerKey: string): Promise<string | null> {
+  return (await classForTrainer(trainerKey))?.class_code ?? null;
 }
 
 // Returns null when the trainer key isn't recognized.
