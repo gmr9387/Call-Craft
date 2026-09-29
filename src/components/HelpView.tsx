@@ -153,7 +153,15 @@ const SECTIONS: Section[] = [
   },
 ]
 
-export default function HelpView({ user, onPrivacy }: { user: Me; onPrivacy: () => void }) {
+export default function HelpView({
+  user,
+  onPrivacy,
+  onSecurity,
+}: {
+  user: Me
+  onPrivacy: () => void
+  onSecurity: () => void
+}) {
   const sections = SECTIONS.filter((s) => s.roles.includes(user.role))
   return (
     <div className="history help">
@@ -178,6 +186,10 @@ export default function HelpView({ user, onPrivacy }: { user: Me; onPrivacy: () 
         What CallCraft keeps and who can see it:{' '}
         <button className="link small" onClick={onPrivacy}>
           Privacy and terms
+        </button>
+        {' · '}How CallCraft protects accounts and data:{' '}
+        <button className="link small" onClick={onSecurity}>
+          Security and trust
         </button>
       </p>
     </div>

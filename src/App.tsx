@@ -21,6 +21,7 @@ import FlowsView, { FlowBuilder } from './components/FlowsView.tsx'
 import SystemView from './components/SystemView.tsx'
 import HelpView from './components/HelpView.tsx'
 import PrivacyView from './components/PrivacyView.tsx'
+import SecurityView from './components/SecurityView.tsx'
 
 type View =
   | { name: 'dashboard' }
@@ -31,6 +32,7 @@ type View =
   | { name: 'system' }
   | { name: 'help' }
   | { name: 'privacy' }
+  | { name: 'security' }
   | { name: 'flows' }
   | { name: 'flow-builder'; flow: CallFlow | null; copy?: boolean }
   | { name: 'call'; scenario: Scenario; flow: CallFlow; run: number; preview?: ClassInfo; resume?: SavedCall }
@@ -103,8 +105,8 @@ type Session = { state: 'loading' } | { state: 'error'; message: string } | { st
 export default function App() {
   const [session, setSession] = useState<Session>({ state: 'loading' })
   const [authMode, setAuthMode] = useState<AuthMode | null>(modeFromUrl)
-  // Signed-out visitors can read the privacy page from the marketing page.
-  const [showPrivacy, setShowPrivacy] = useState(false)
+  // Signed-out visitors can read the privacy and security pages from the marketing page.
+  const [publicPage, setPublicPage] = useState<'privacy' | 'security' | null>(null)
   const [view, setView] = useState<View>({ name: 'dashboard' })
   const [classScenarios, setClassScenarios] = useState<Scenario[]>([])
   // The agent's class call flow (the built-in sample when not in a class).
@@ -223,10 +225,14 @@ export default function App() {
 
   if (!user) {
     const mode = authMode ?? (session.needsSetup ? { kind: 'setup' as const } : null)
-    if (showPrivacy) {
+    if (publicPage) {
       return (
         <div className="public-page">
-          <PrivacyView onBack={() => setShowPrivacy(false)} />
+          {publicPage === 'privacy' ? (
+            <PrivacyView onBack={() => setPublicPage(null)} />
+          ) : (
+            <SecurityView onBack={() => setPublicPage(null)} />
+          )}
         </div>
       )
     }
@@ -235,7 +241,11 @@ export default function App() {
         <Marketing
           onSignIn={() => setAuthMode({ kind: 'login' })}
           onPrivacy={() => {
-            setShowPrivacy(true)
+            setPublicPage('privacy')
+            window.scrollTo(0, 0)
+          }}
+          onSecurity={() => {
+            setPublicPage('security')
             window.scrollTo(0, 0)
           }}
         />
@@ -283,6 +293,7 @@ export default function App() {
     view.name === 'system' ||
     view.name === 'help' ||
     view.name === 'privacy' ||
+    view.name === 'security' ||
     view.name === 'flows' ||
     view.name === 'mycalls'
       ? view.name
@@ -454,7 +465,14 @@ export default function App() {
         {view.name === 'account' && <AccountView user={user} />}
         {view.name === 'people' && user.role === 'admin' && <PeopleView user={user} />}
         {view.name === 'system' && user.role === 'admin' && <SystemView />}
-        {view.name === 'help' && <HelpView user={user} onPrivacy={() => setView({ name: 'privacy' })} />}
+        {view.name === 'help' && (
+          <HelpView
+            user={user}
+            onPrivacy={() => setView({ name: 'privacy' })}
+            onSecurity={() => setView({ name: 'security' })}
+          />
+        )}
+        {view.name === 'security' && <SecurityView onBack={() => setView({ name: 'help' })} />}
         {view.name === 'privacy' && <PrivacyView onBack={() => setView({ name: 'help' })} />}
         {view.name === 'flows' && user.role !== 'agent' && (
           <FlowsView onEdit={(flow, copy) => setView({ name: 'flow-builder', flow, copy })} />

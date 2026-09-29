@@ -8,6 +8,7 @@ const TEAM_PHOTO = '/photos/marketing-team.webp'
 interface Props {
   onSignIn: () => void
   onPrivacy: () => void
+  onSecurity: () => void
 }
 
 // The page reads like a magazine feature: a cover photo, a short introduction, then a few
@@ -85,7 +86,7 @@ function useScrollReveal(onFigureShown: () => void) {
 
 const delay = (i: number) => ({ '--reveal-delay': `${i * 0.12}s` }) as CSSProperties
 
-export default function Marketing({ onSignIn, onPrivacy }: Props) {
+export default function Marketing({ onSignIn, onPrivacy, onSecurity }: Props) {
   const [figureShown, setFigureShown] = useState(false)
   const [showFigure] = useState(() => () => setFigureShown(true))
   const rootRef = useScrollReveal(showFigure)
@@ -97,6 +98,9 @@ export default function Marketing({ onSignIn, onPrivacy }: Props) {
         <nav>
           <a href="#story">The idea</a>
           <a href="#chapters">How it works</a>
+          <button className="link mag-navlink" onClick={onSecurity}>
+            Security
+          </button>
           <button className="link mag-signin" onClick={onSignIn}>
             Sign in →
           </button>
@@ -177,6 +181,9 @@ export default function Marketing({ onSignIn, onPrivacy }: Props) {
       <footer className="mag-footer">
         <span>© {YEAR} CallCraft · Practice callers are made up. No real customer data.</span>
         <span className="mag-footer-links">
+          <button className="link" onClick={onSecurity}>
+            Security and trust
+          </button>
           <button className="link" onClick={onPrivacy}>
             Privacy and terms
           </button>

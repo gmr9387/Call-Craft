@@ -2337,3 +2337,48 @@ fieldset.builder-form:disabled textarea {
   padding: 12px 16px;
   margin-bottom: 16px;
 }
+
+/* Security and trust page */
+.security-section h2 {
+  margin: 0 0 6px;
+}
+
+.security-list {
+  display: grid;
+  gap: 14px;
+  margin: 12px 0 0;
+}
+
+.security-list dt {
+  font-weight: 700;
+}
+
+.security-list dd {
+  margin: 2px 0 0;
+  color: var(--text-2);
+}
+
+.security-honest {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.security-honest ul {
+  margin: 8px 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 4px;
+}
+
+.mag-nav .mag-navlink {
+  color: var(--ink);
+  font-weight: 400;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 720px) {
+  .mag-nav .mag-navlink {
+    display: none;
+  }
+}
