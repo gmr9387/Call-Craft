@@ -184,4 +184,4 @@ GitHub Actions runs lint, build, and all tests (with a Postgres service) on ever
 
 - Real-time voice calls instead of browser speech.
 - Company sign-in (single sign-on) if a client's IT asks for it.
-- Send agent readiness to Salesforce. See the plan in [docs/salesforce-sync-plan.md](docs/salesforce-sync-plan.md).
+- Send agent readiness to ServiceNow. See the plan in [docs/servicenow-sync-plan.md](docs/servicenow-sync-plan.md).
